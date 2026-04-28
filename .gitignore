@@ -1,0 +1,12 @@
+build/
+*.o
+*.d
+*.cooja
+*.sky
+*.elf
+*.map
+*.log
+*.txt
+COOJA.testlog
+obj/
+.deps/
