@@ -9,13 +9,13 @@
  * monitoring indicator in the MTD orchestrator, allowing the rule-based
  * technique-selection logic of thesis Sec 4.5.2 to be exercised.
  *
- *   ATTACK_MODE_SCAN     (1)  — thesis Sec 5.3.1
+ *   ATTACK_MODE_SCAN     (1)  -- thesis Sec 5.3.1
  *     IPv6 address scanning: the attacker sends 10 UDP probe packets
  *     per second to the border router with a deliberately stale
  *     port= field in the payload.  Each probe increments the BR's
  *     STALE_PORT counter.  Expected MTD response: IPv6 IID shuffle.
  *
- *   ATTACK_MODE_SINKHOLE (2)  — thesis Sec 5.3.2
+ *   ATTACK_MODE_SINKHOLE (2)  -- thesis Sec 5.3.2
  *     RPL sinkhole (approximation): the attacker floods the radio
  *     channel with high-rate link-local broadcasts, causing collisions
  *     that silence one or more legitimate sensors within its
@@ -30,7 +30,7 @@
  *     approximation produces the same detection signal (sensor silence
  *     → CONN_FAILURE) and exercises the same reactive technique branch.
  *
- *   ATTACK_MODE_FLOOD    (3)  — thesis Sec 5.3.3
+ *   ATTACK_MODE_FLOOD    (3)  -- thesis Sec 5.3.3
  *     CoAP flooding approximation: the attacker sends 20 UDP packets
  *     per second to the border router.  The BR's packet-rate monitor
  *     (a Cooja-friendly proxy for the Energest CPU% flood detector,
@@ -62,20 +62,28 @@
 /* Per-mode cadence (milliseconds between sends)                             */
 /*---------------------------------------------------------------------------*/
 #if ATTACK_MODE == ATTACK_MODE_SCAN
-  /* 10 probes/s (thesis Sec 5.3.1) */
-  #define ATTACK_SEND_MS         100
+  /* 5 probes/s.  Realistic stealth-scan rate (literature reports
+   * 1-10 pkt/s for IPv6 enumeration).  At 5 pkt/s the BR sees
+   * ~50 pkts per 10s window; combined with the 25 legitimate sensors
+   * (~25 pkts/window) the total stays just below
+   * MTD_FLOOD_PPS_THRESHOLD (80), so the scan trips STALE_PORT cleanly
+   * without misfiring the flood branch. */
+  #define ATTACK_SEND_MS         200
   #define ATTACK_LABEL           "SCAN"
 #elif ATTACK_MODE == ATTACK_MODE_SINKHOLE
-  /* 5 broadcast storms/s — aggressive but within UDGM capacity */
+  /* 5 broadcast storms/s -- aggressive but within UDGM capacity.
+   * Drowns legitimate uplinks via radio collisions; sensors then
+   * fall silent and the silence watchdog raises CONN_FAILURE. */
   #define ATTACK_SEND_MS         200
   #define ATTACK_LABEL           "SINK"
 #elif ATTACK_MODE == ATTACK_MODE_FLOOD
-  /* 20 flood packets/s — comfortably above MTD_FLOOD_PPS_THRESHOLD
-   * (30 pkts per MTD_CPU_WINDOW_S=10 s window → 3 pkt/s) */
+  /* 20 flood packets/s.  Produces 200 pkts per 10s window, which
+   * comfortably exceeds MTD_FLOOD_PPS_THRESHOLD (80) and triggers
+   * the CPU_LOAD reactive branch (IPv6 shuffle + rate limit). */
   #define ATTACK_SEND_MS         50
   #define ATTACK_LABEL           "FLOOD"
 #else
-  #error "Unknown ATTACK_MODE — set ATTACK_MODE to 1, 2, or 3"
+  #error "Unknown ATTACK_MODE -- set ATTACK_MODE to 1, 2, or 3"
 #endif
 
 /* Stale-port constant used by SCAN and FLOOD probes.  After the BR's
@@ -83,9 +91,9 @@
  * as a STALE_PORT anomaly on every packet. */
 #define ATTACK_STALE_PORT        SENSOR_UDP_CLIENT_PORT   /* 8765 */
 
-/* Start-up delay — lets the RPL DODAG converge and legitimate sensors
+/* Start-up delay -- lets the RPL DODAG converge and legitimate sensors
  * register before the attack begins.  Matches thesis evaluation protocol
- * (Sec 5.2.3 — "attacks begin after the first proactive shuffle cycle
+ * (Sec 5.2.3 -- "attacks begin after the first proactive shuffle cycle
  * at t = 30 s"). */
 #define ATTACK_WARMUP_S          45
 #define ATTACK_WARMUP            (ATTACK_WARMUP_S * CLOCK_SECOND)
@@ -144,7 +152,7 @@ PROCESS_THREAD(attacker_process, ev, data)
                       SENSOR_UDP_SERVER_PORT,
                       attack_rx_callback);
 
-  LOG_INFO("Attacker started — mode=%s warmup=%ds cadence=%dms\n",
+  LOG_INFO("Attacker started -- mode=%s warmup=%ds cadence=%dms\n",
            ATTACK_LABEL, ATTACK_WARMUP_S, ATTACK_SEND_MS);
 
   /* Warm-up: let the DODAG converge first so the attack traffic hits
@@ -152,10 +160,10 @@ PROCESS_THREAD(attacker_process, ev, data)
   etimer_set(&warmup_timer, ATTACK_WARMUP);
   PROCESS_WAIT_EVENT_UNTIL(etimer_expired(&warmup_timer));
 
-  LOG_INFO("Warm-up complete — launching %s attack\n", ATTACK_LABEL);
+  LOG_INFO("Warm-up complete -- launching %s attack\n", ATTACK_LABEL);
 
 #if ATTACK_MODE == ATTACK_MODE_SINKHOLE
-  /* Link-local all-nodes (ff02::1) — target for the radio-disruption storm */
+  /* Link-local all-nodes (ff02::1) -- target for the radio-disruption storm */
   uip_create_linklocal_allnodes_mcast(&bcast_addr);
 #endif
 
@@ -174,7 +182,7 @@ PROCESS_THREAD(attacker_process, ev, data)
 
 #if ATTACK_MODE == ATTACK_MODE_SCAN
     /*
-     * Thesis Sec 5.3.1 — IPv6 scan.  Send 10 UDP probes/s to the BR
+     * Thesis Sec 5.3.1 -- IPv6 scan.  Send 10 UDP probes/s to the BR
      * with a deliberately stale port field.  Each probe appears to
      * the BR as a legitimate-looking sensor packet that, after the
      * initial grace window expires, fails the current/previous port
@@ -182,7 +190,7 @@ PROCESS_THREAD(attacker_process, ev, data)
      *
      * In addition we vary the destination IID slightly every 100
      * packets, simulating the address-enumeration sweep described
-     * in the thesis — Echo Request packets to every address in the
+     * in the thesis -- Echo Request packets to every address in the
      * /64 prefix.
      */
     if(have_root) {
@@ -212,13 +220,13 @@ PROCESS_THREAD(attacker_process, ev, data)
 
 #elif ATTACK_MODE == ATTACK_MODE_SINKHOLE
     /*
-     * Thesis Sec 5.3.2 — RPL sinkhole approximation.  Broadcast a
+     * Thesis Sec 5.3.2 -- RPL sinkhole approximation.  Broadcast a
      * large UDP payload on the link-local all-nodes address at high
      * cadence.  Under Cooja's UDGM model, collisions within the
      * attacker's interference range cause legitimate sensor uplink
      * packets to be lost.  Sensors that fall silent for longer than
      * MTD_SILENCE_TIMEOUT_S are flagged by the BR's silence watchdog
-     * as CONN_FAILURE (failure_rate indicator) — see
+     * as CONN_FAILURE (failure_rate indicator) -- see
      * mtd-orchestrator.c :: silence_watchdog_cb().
      *
      * The payload carries a stale-port marker so that any packet the
@@ -248,7 +256,7 @@ PROCESS_THREAD(attacker_process, ev, data)
 
 #elif ATTACK_MODE == ATTACK_MODE_FLOOD
     /*
-     * Thesis Sec 5.3.3 — CoAP flooding approximation.  Send 20 UDP
+     * Thesis Sec 5.3.3 -- CoAP flooding approximation.  Send 20 UDP
      * packets/s to the BR's server port.  The BR's packet-rate
      * monitor (CPU_LOAD proxy for Cooja contikimote) observes
      * count > MTD_FLOOD_PPS_THRESHOLD within one
@@ -259,7 +267,7 @@ PROCESS_THREAD(attacker_process, ev, data)
      * IMPORTANT: the payload MUST NOT contain the "port=" token that
      * legitimate sensor packets carry.  A CoAP GET flood (thesis
      * mechanism) has no port field, so at the BR parse_payload_port()
-     * returns 0 and the STALE_PORT check is bypassed — leaving the
+     * returns 0 and the STALE_PORT check is bypassed -- leaving the
      * packet-rate monitor as the sole detection path, exactly as the
      * thesis describes.  If we embedded port=<stale> every flood
      * packet would trip STALE_PORT first and saturate the 5-anomaly

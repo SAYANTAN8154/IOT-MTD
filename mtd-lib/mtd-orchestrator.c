@@ -1,7 +1,7 @@
 /*
  * mtd-orchestrator.c
  *
- * MTD Orchestrator — runs on the border router (Class 2 device).
+ * MTD Orchestrator -- runs on the border router (Class 2 device).
  *
  * Responsibilities:
  *   1. Proactive defence: trigger periodic IPv6 shuffles (every
@@ -48,13 +48,13 @@
 #define LOG_LEVEL   LOG_LEVEL_INFO
 
 /*---------------------------------------------------------------------------*/
-/* Command bytes — keep in sync with sensor-node.c                           */
+/* Command bytes -- keep in sync with sensor-node.c                           */
 /*---------------------------------------------------------------------------*/
 #define CMD_PORT_HOP      0x01   /* payload: 3 bytes (cmd + port hi + port lo) */
 #define CMD_ADDR_SHUFFLE  0x03   /* payload: 1 byte  (cmd only)                */
 
 /*---------------------------------------------------------------------------*/
-/* Sensor address registry — ring buffer                                      */
+/* Sensor address registry -- ring buffer                                      */
 /*                                                                            */
 /* RPL-Lite non-storing mode does not populate per-host downward routes on   */
 /* the DAG root, so uip_ds6_route_head() is always empty here.  We maintain  */
@@ -66,18 +66,18 @@
 /* oldest entry when full, so stale post-shuffle addresses age out naturally  */
 /* and the 64 slots always hold the most recently active addresses.           */
 /*---------------------------------------------------------------------------*/
-#define MTD_MAX_SENSORS  64   /* ring buffer capacity — 2+ address generations */
+#define MTD_MAX_SENSORS  64   /* ring buffer capacity -- 2+ address generations */
 
 static uip_ipaddr_t sensor_registry[MTD_MAX_SENSORS];
 static uint8_t      sensor_count = 0;   /* entries written so far (≤ MTD_MAX_SENSORS) */
 static uint8_t      sensor_head  = 0;   /* next write slot (wraps at MTD_MAX_SENSORS)  */
 
 /* Per-sensor last-seen timestamps for the silence watchdog
- * (thesis Sec 5.3.2 — RPL sinkhole detection).  Indexed in lock-step
+ * (thesis Sec 5.3.2 -- RPL sinkhole detection).  Indexed in lock-step
  * with sensor_registry so sensor_last_seen[i] belongs to sensor_registry[i]. */
 static clock_time_t sensor_last_seen[MTD_MAX_SENSORS];
 /* Bit set when we have already reported a CONN_FAILURE for this slot in the
- * current silence episode — cleared when the sensor transmits again. */
+ * current silence episode -- cleared when the sensor transmits again. */
 static uint8_t      sensor_silence_flagged[MTD_MAX_SENSORS];
 
 /*---------------------------------------------------------------------------*/
@@ -89,7 +89,7 @@ static uint8_t       anomaly_count = 0; /* total across all types              *
 static uint32_t      cycle_count   = 0;
 
 /*
- * Per-type anomaly counters — used by the reactive handler to select the
+ * Per-type anomaly counters -- used by the reactive handler to select the
  * appropriate MTD technique (see mtd_anomaly_type_t in mtd-orchestrator.h).
  */
 static uint8_t anomaly_counts[MTD_ANOMALY_TYPE_COUNT];
@@ -125,7 +125,7 @@ static uint8_t        cpu_load_pct = 0;   /* most recent window CPU% (0–100) *
  * rate_limit_armed is set to 1 by the CPU monitor when flooding is detected
  * and cleared when cpu_load_pct drops back below the threshold.  This means
  * rate limiting is only enforced during an active flooding episode, not
- * permanently — preventing unnecessary packet loss during normal operation.
+ * permanently -- preventing unnecessary packet loss during normal operation.
  */
 static struct ctimer  rate_window_timer;
 static uint16_t       rate_window_count = 0;  /* packets seen this 1-s window */
@@ -148,7 +148,7 @@ static uint16_t       pkt_rate_window_count = 0;
 /* A reactive MTD cycle is only fired if at least MTD_COOLDOWN_S seconds have
  * elapsed since the previous one.  The threshold counter keeps accumulating
  * during cooldown so that the very next anomaly after the cooldown lifts
- * can trigger immediately — matching the thesis description ("when any
+ * can trigger immediately -- matching the thesis description ("when any
  * single indicator exceeds its threshold AND the cooldown timer has
  * elapsed"). */
 static clock_time_t   last_reactive_ts = 0;
@@ -165,8 +165,8 @@ static struct ctimer  silence_timer;
 static clock_time_t   silence_grace_until = 0;
 
 /*
- * current_port  — the port the orchestrator most recently broadcast.
- * previous_port — the port from one hop ago.
+ * current_port  -- the port the orchestrator most recently broadcast.
+ * previous_port -- the port from one hop ago.
  *
  * The anomaly check in border-router.c accepts both values so that a
  * sensor which missed exactly one CMD_PORT_HOP delivery is not falsely
@@ -180,7 +180,7 @@ static uint16_t current_port  = SENSOR_UDP_CLIENT_PORT;
 static uint16_t previous_port = SENSOR_UDP_CLIENT_PORT;
 
 /*
- * initial_grace_active — while true, the anomaly check in border-router.c
+ * initial_grace_active -- while true, the anomaly check in border-router.c
  * also accepts SENSOR_UDP_CLIENT_PORT (8765) as a valid port so that sensors
  * that have not yet received their first CMD_PORT_HOP are not falsely flagged.
  *
@@ -211,7 +211,7 @@ static void reactive_shuffle_cb(void *ptr);
 
 /*---------------------------------------------------------------------------*/
 /*
- * broadcast_port_update — unicast CMD_PORT_HOP to every registered sensor.
+ * broadcast_port_update -- unicast CMD_PORT_HOP to every registered sensor.
  *
  * Uses the sensor_registry built up by mtd_register_sensor() rather than
  * uip_ds6_route_head(), which is empty on the DAG root in RPL-Lite's
@@ -241,7 +241,7 @@ broadcast_port_update(uint16_t new_port)
                            cmd, sizeof(cmd),
                            &sensor_registry[i]);
     if(rc < 0) {
-      /* Unicast delivery failed — routing disruption, count as CONN_FAILURE */
+      /* Unicast delivery failed -- routing disruption, count as CONN_FAILURE */
       LOG_WARN("CMD_PORT_HOP send failed (rc=%d) to ", rc);
       LOG_WARN_6ADDR(&sensor_registry[i]);
       LOG_WARN_("\n");
@@ -256,7 +256,7 @@ broadcast_port_update(uint16_t new_port)
 
 /*---------------------------------------------------------------------------*/
 /*
- * broadcast_addr_shuffle — unicast CMD_ADDR_SHUFFLE (0x03) to every
+ * broadcast_addr_shuffle -- unicast CMD_ADDR_SHUFFLE (0x03) to every
  * registered sensor so each one randomises its own IPv6 IID independently.
  *
  * Command layout (1 byte):
@@ -297,12 +297,12 @@ broadcast_addr_shuffle(void)
    * until the MTD_SILENCE_TIMEOUT window has passed so we don't mis-flag
    * the address migration as a sinkhole.
    */
-  silence_grace_until = clock_time() + MTD_SILENCE_TIMEOUT;
+  silence_grace_until = clock_time() + MTD_SILENCE_GRACE;
 }
 
 /*---------------------------------------------------------------------------*/
 /*
- * proactive_shuffle_cb — fires every MTD_SHUFFLE_INTERVAL.
+ * proactive_shuffle_cb -- fires every MTD_SHUFFLE_INTERVAL.
  *
  * Actions:
  *   1. Shuffle the border router's own IPv6 IID.
@@ -326,14 +326,19 @@ proactive_shuffle_cb(void *ptr)
   LOG_INFO("MTD_CYCLE type=shuffle cycle=%lu port=%u\n",
            (unsigned long)cycle_count, current_port);
 
-  anomaly_count = 0;
+  /* NOTE: anomaly_count is NOT reset here.  The earlier implementation
+   * cleared it on every proactive shuffle, which masked slow-firing
+   * detectors (e.g. the CPU monitor at 10 s windows) from ever
+   * reaching the threshold of 5.  The reactive cycle itself resets
+   * the counters when it consumes a threshold breach (see
+   * reactive_shuffle_cb), and the cooldown gate prevents oscillation. */
 
   ctimer_reset(&proactive_timer);
 }
 
 /*---------------------------------------------------------------------------*/
 /*
- * port_hop_cb — fires every MTD_PORT_HOP_INTERVAL (independent of shuffle).
+ * port_hop_cb -- fires every MTD_PORT_HOP_INTERVAL (independent of shuffle).
  *
  * Actions:
  *   1. Pick a new random port via port_hopper_next().
@@ -353,7 +358,7 @@ port_hop_cb(void *ptr)
    * Every active sensor has had >=120 s of piggyback replies by now. */
   if(initial_grace_active && mtd_hop_count >= 2) {
     initial_grace_active = 0;
-    LOG_INFO("Initial port grace EXPIRED after hop %u — port 8765 now anomalous\n",
+    LOG_INFO("Initial port grace EXPIRED after hop %u -- port 8765 now anomalous\n",
              mtd_hop_count);
   }
 
@@ -371,7 +376,7 @@ port_hop_cb(void *ptr)
 
 /*---------------------------------------------------------------------------*/
 /*
- * reactive_shuffle_cb — fires immediately when the anomaly threshold is hit.
+ * reactive_shuffle_cb -- fires immediately when the anomaly threshold is hit.
  *
  * Threat-type selection logic:
  *   The orchestrator accumulates per-type anomaly counts (anomaly_counts[]).
@@ -419,7 +424,7 @@ reactive_shuffle_cb(void *ptr)
   /* ---- Select and apply MTD technique ---------------------------------- */
   /*
    * Only the timer consumed by this reactive action is rewound.  The other
-   * timer is left alone so its existing countdown continues — otherwise a
+   * timer is left alone so its existing countdown continues -- otherwise a
    * persistent attacker (anomaly threshold re-hit every ~25 s) would reset
    * both timers every cycle and the 60 s port hop would never fire.
    */
@@ -429,14 +434,14 @@ reactive_shuffle_cb(void *ptr)
       /*
        * Scanning / replay detected.
        * Shuffle the border router's own IID and command every sensor to do
-       * the same.  No port hop — the attacker is not yet controlling the
+       * the same.  No port hop -- the attacker is not yet controlling the
        * port channel.
        */
       ipv6_shuffle_address();
       broadcast_addr_shuffle();
       LOG_INFO("MTD_CYCLE type=reactive_shuffle cycle=%lu port=%u\n",
                (unsigned long)cycle_count, current_port);
-      /* Shuffle consumed — rewind shuffle timer, leave hop timer running */
+      /* Shuffle consumed -- rewind shuffle timer, leave hop timer running */
       ctimer_set(&proactive_timer, MTD_SHUFFLE_INTERVAL,
                  proactive_shuffle_cb, NULL);
       break;
@@ -461,14 +466,14 @@ reactive_shuffle_cb(void *ptr)
         LOG_INFO("MTD_CYCLE type=reactive_hop cycle=%lu port=%u\n",
                  (unsigned long)cycle_count, current_port);
       }
-      /* Port hop consumed — rewind hop timer, leave shuffle timer running */
+      /* Port hop consumed -- rewind hop timer, leave shuffle timer running */
       ctimer_set(&port_hop_timer, MTD_PORT_HOP_INTERVAL,
                  port_hop_cb, NULL);
       break;
 
     case MTD_ANOMALY_CPU_LOAD:
       /*
-       * Flooding detected — CPU load exceeded MTD_CPU_THRESHOLD_PCT.
+       * Flooding detected -- CPU load exceeded MTD_CPU_THRESHOLD_PCT.
        * Shuffle the address to force the flood source to re-discover the
        * target, then arm the rate limiter so mtd_rate_limit_check() starts
        * dropping excess traffic.  The rate limiter stays armed until the
@@ -480,7 +485,7 @@ reactive_shuffle_cb(void *ptr)
       LOG_INFO("MTD_CYCLE type=reactive_flood cycle=%lu port=%u "
                "rate_limit=ARMED\n",
                (unsigned long)cycle_count, current_port);
-      /* Shuffle consumed — rewind shuffle timer, leave hop timer running */
+      /* Shuffle consumed -- rewind shuffle timer, leave hop timer running */
       ctimer_set(&proactive_timer, MTD_SHUFFLE_INTERVAL,
                  proactive_shuffle_cb, NULL);
       break;
@@ -498,7 +503,7 @@ reactive_shuffle_cb(void *ptr)
 
 /*---------------------------------------------------------------------------*/
 /*
- * cpu_monitor_cb — fires every MTD_CPU_WINDOW_S seconds.
+ * cpu_monitor_cb -- fires every MTD_CPU_WINDOW_S seconds.
  *
  * Reads the cumulative Energest CPU and LPM counters, computes the
  * fraction of the last window spent in active CPU mode, and stores the
@@ -544,13 +549,13 @@ cpu_monitor_cb(void *ptr)
            cpu_load_pct, MTD_CPU_THRESHOLD_PCT);
 
   if(cpu_load_pct > MTD_CPU_THRESHOLD_PCT) {
-    LOG_WARN("CPU load %u%% exceeds threshold — reporting flooding anomaly\n",
+    LOG_WARN("CPU load %u%% exceeds threshold -- reporting flooding anomaly\n",
              cpu_load_pct);
     mtd_report_anomaly_typed(MTD_ANOMALY_CPU_LOAD);
   } else if(rate_limit_armed) {
-    /* Load has recovered — disarm the rate limiter */
+    /* Load has recovered -- disarm the rate limiter */
     rate_limit_armed = 0;
-    LOG_INFO("CPU load nominal — rate limiter DISARMED\n");
+    LOG_INFO("CPU load nominal -- rate limiter DISARMED\n");
   }
 
   ctimer_reset(&cpu_monitor_timer);
@@ -558,7 +563,7 @@ cpu_monitor_cb(void *ptr)
 
 /*---------------------------------------------------------------------------*/
 /*
- * rate_window_cb — fires every CLOCK_SECOND to reset the per-second
+ * rate_window_cb -- fires every CLOCK_SECOND to reset the per-second
  * packet counter used by mtd_rate_limit_check().
  */
 static void
@@ -570,14 +575,14 @@ rate_window_cb(void *ptr)
 
 /*---------------------------------------------------------------------------*/
 /*
- * pkt_rate_cb — fires every MTD_CPU_WINDOW_S seconds.
+ * pkt_rate_cb -- fires every MTD_CPU_WINDOW_S seconds.
  *
  * Packet-rate flood detector.  On the Cooja contikimote target the
  * Energest LPM counter never increments, so cpu_monitor_cb() cannot
  * compute a CPU% ratio.  This callback provides a target-independent
  * flood indicator: if the observed packet count within the monitoring
  * window exceeds MTD_FLOOD_PPS_THRESHOLD, a CPU_LOAD anomaly is
- * reported — mapped by the technique-selection logic (thesis Sec 4.5.2)
+ * reported -- mapped by the technique-selection logic (thesis Sec 4.5.2)
  * to the composite "IPv6 shuffle + rate limit" response.
  *
  * Thesis reference: Sec 5.3.3 (CoAP flooding scenario).
@@ -592,7 +597,7 @@ pkt_rate_cb(void *ptr)
            count, MTD_CPU_WINDOW_S, MTD_FLOOD_PPS_THRESHOLD);
 
   if(count > MTD_FLOOD_PPS_THRESHOLD) {
-    LOG_WARN("Packet rate %u/%ds exceeds threshold %u — reporting flooding anomaly\n",
+    LOG_WARN("Packet rate %u/%ds exceeds threshold %u -- reporting flooding anomaly\n",
              count, MTD_CPU_WINDOW_S, MTD_FLOOD_PPS_THRESHOLD);
     mtd_report_anomaly_typed(MTD_ANOMALY_CPU_LOAD);
   }
@@ -602,7 +607,7 @@ pkt_rate_cb(void *ptr)
 
 /*---------------------------------------------------------------------------*/
 /*
- * silence_watchdog_cb — fires every MTD_SILENCE_CHECK_S seconds.
+ * silence_watchdog_cb -- fires every MTD_SILENCE_CHECK_S seconds.
  *
  * Per-sensor sinkhole detector.  When a RPL sinkhole attacker hijacks a
  * legitimate sensor's upward path (thesis Sec 5.3.2), the sensor's packets
@@ -640,10 +645,10 @@ silence_watchdog_cb(void *ptr)
       continue;   /* already flagged in this silence episode */
     }
     if(sensor_last_seen[i] == 0) {
-      continue;   /* never seen a packet yet — not a silence */
+      continue;   /* never seen a packet yet -- not a silence */
     }
     if((now - sensor_last_seen[i]) >= MTD_SILENCE_TIMEOUT) {
-      LOG_WARN("SILENCE sensor #%u idle %lus (>%ds) — CONN_FAILURE ",
+      LOG_WARN("SILENCE sensor #%u idle %lus (>%ds) -- CONN_FAILURE ",
                i,
                (unsigned long)((now - sensor_last_seen[i]) / CLOCK_SECOND),
                MTD_SILENCE_TIMEOUT_S);
@@ -666,6 +671,8 @@ mtd_orchestrator_init(void)
 {
   uint8_t t;
 
+#ifndef CONTIKI_TARGET_SKY
+  /* Startup banner -- skipped on Sky to save ~300B of Flash. */
   LOG_INFO("MTD Orchestrator starting...\n");
   LOG_INFO("  Shuffle interval  : %d s\n", MTD_SHUFFLE_INTERVAL_S);
   LOG_INFO("  Port hop interval : %d s\n", MTD_PORT_HOP_INTERVAL_S);
@@ -673,6 +680,7 @@ mtd_orchestrator_init(void)
   LOG_INFO("  CPU threshold     : %d%%\n", MTD_CPU_THRESHOLD_PCT);
   LOG_INFO("  CPU window        : %d s\n", MTD_CPU_WINDOW_S);
   LOG_INFO("  Rate limit        : %d pkt/s\n", MTD_RATE_LIMIT_PPS);
+#endif
 
   /* Zero per-type anomaly counters */
   for(t = 0; t < MTD_ANOMALY_TYPE_COUNT; t++) {
@@ -693,7 +701,7 @@ mtd_orchestrator_init(void)
                       SENSOR_UDP_CLIENT_PORT,
                       NULL);   /* no receive callback needed on orchestrator */
 
-  /* current_port starts at SENSOR_UDP_CLIENT_PORT — the initial active_port
+  /* current_port starts at SENSOR_UDP_CLIENT_PORT -- the initial active_port
    * that all sensors use before the first CMD_PORT_HOP arrives.            */
   current_port = SENSOR_UDP_CLIENT_PORT;
 
@@ -723,10 +731,12 @@ mtd_orchestrator_init(void)
   /* Sensor-silence watchdog (CONN_FAILURE detection for sinkhole attacks) */
   ctimer_set(&silence_timer, MTD_SILENCE_CHECK, silence_watchdog_cb, NULL);
 
+#ifndef CONTIKI_TARGET_SKY
   LOG_INFO("MTD Orchestrator ready. shuffle=%ds hop=%ds cpu_win=%ds "
            "cooldown=%ds flood_pps=%u silence=%ds\n",
            MTD_SHUFFLE_INTERVAL_S, MTD_PORT_HOP_INTERVAL_S, MTD_CPU_WINDOW_S,
            MTD_COOLDOWN_S, MTD_FLOOD_PPS_THRESHOLD, MTD_SILENCE_TIMEOUT_S);
+#endif
 }
 
 /*---------------------------------------------------------------------------*/
@@ -747,7 +757,7 @@ mtd_report_anomaly_typed(mtd_anomaly_type_t type)
     /*
      * Cooldown gate (thesis Sec 4.5.1 / Table 6).  A reactive cycle is
      * only fired if MTD_COOLDOWN_S seconds have elapsed since the last
-     * one — this prevents oscillation under sustained attacks and lets
+     * one -- this prevents oscillation under sustained attacks and lets
      * RPL re-converge after each shuffle.  The counters keep accumulating
      * during cooldown so the very next anomaly after cooldown expiry
      * still triggers immediately.
@@ -756,14 +766,14 @@ mtd_report_anomaly_typed(mtd_anomaly_type_t type)
     if(!first_reactive &&
        (now - last_reactive_ts) < MTD_COOLDOWN) {
       LOG_INFO("Threat threshold reached but cooldown active "
-               "(%lu/%lu s remaining) — reactive trigger suppressed\n",
+               "(%lu/%lu s remaining) -- reactive trigger suppressed\n",
                (unsigned long)((MTD_COOLDOWN - (now - last_reactive_ts))
                                / CLOCK_SECOND),
                (unsigned long)MTD_COOLDOWN_S);
       return;
     }
 
-    LOG_WARN("Threat threshold reached — triggering reactive MTD cycle\n");
+    LOG_WARN("Threat threshold reached -- triggering reactive MTD cycle\n");
     last_reactive_ts = now;
     first_reactive   = 0;
 
@@ -779,7 +789,7 @@ mtd_report_anomaly_typed(mtd_anomaly_type_t type)
 
 /*---------------------------------------------------------------------------*/
 /*
- * mtd_report_anomaly — backward-compatible wrapper.
+ * mtd_report_anomaly -- backward-compatible wrapper.
  * Reports MTD_ANOMALY_STALE_PORT (scanning / replay).
  * Existing call sites in border-router.c continue to compile unchanged.
  */
@@ -812,7 +822,7 @@ mtd_initial_grace_active(void)
 
 /*---------------------------------------------------------------------------*/
 /*
- * mtd_rate_limit_check — called by border-router.c for every arriving packet.
+ * mtd_rate_limit_check -- called by border-router.c for every arriving packet.
  *
  * When rate_limit_armed is 0 (no flooding detected) every packet is accepted.
  * When armed, the rolling per-second counter is incremented; if it exceeds
@@ -827,21 +837,21 @@ uint8_t
 mtd_rate_limit_check(void)
 {
   if(!rate_limit_armed) {
-    return 0;   /* rate limiting not active — accept all packets */
+    return 0;   /* rate limiting not active -- accept all packets */
   }
 
   rate_window_count++;
   if(rate_window_count > MTD_RATE_LIMIT_PPS) {
     LOG_WARN("RATE_LIMIT drop pkt (count=%u limit=%u)\n",
              rate_window_count, MTD_RATE_LIMIT_PPS);
-    return 1;   /* drop — window saturated */
+    return 1;   /* drop -- window saturated */
   }
   return 0;
 }
 
 /*---------------------------------------------------------------------------*/
 /*
- * mtd_send_port_update — send a CMD_PORT_HOP reply directly to one sensor.
+ * mtd_send_port_update -- send a CMD_PORT_HOP reply directly to one sensor.
  *
  * Called from border-router.c immediately after a valid upward packet arrives.
  * The IP stack still holds a fresh reverse-route entry from the just-received
@@ -857,7 +867,7 @@ mtd_send_port_update(const uip_ipaddr_t *addr)
   uint8_t cmd[3];
 
   if(current_port == SENSOR_UDP_CLIENT_PORT) {
-    return;   /* MTD not started yet — nothing useful to send */
+    return;   /* MTD not started yet -- nothing useful to send */
   }
 
   port_hopper_encode_cmd(cmd, current_port);
@@ -866,7 +876,7 @@ mtd_send_port_update(const uip_ipaddr_t *addr)
 
 /*---------------------------------------------------------------------------*/
 /*
- * mtd_register_sensor — add a sensor's IPv6 address to the registry.
+ * mtd_register_sensor -- add a sensor's IPv6 address to the registry.
  *
  * Called by border-router.c from its UDP receive callback every time a
  * valid data packet arrives.  Duplicate addresses are silently ignored.
@@ -882,7 +892,7 @@ mtd_register_sensor(const uip_ipaddr_t *addr)
   /* Check for duplicate in the currently valid portion of the ring */
   for(i = 0; i < check_count; i++) {
     if(uip_ipaddr_cmp(&sensor_registry[i], addr)) {
-      /* Already known — refresh last-seen and clear any silence flag */
+      /* Already known -- refresh last-seen and clear any silence flag */
       if(sensor_silence_flagged[i]) {
         LOG_INFO("SILENCE recovered sensor #%u (silence ended)\n", i);
       }
@@ -911,7 +921,7 @@ mtd_register_sensor(const uip_ipaddr_t *addr)
 
 /*---------------------------------------------------------------------------*/
 /*
- * mtd_packet_rate_tick — called once per incoming application-layer packet
+ * mtd_packet_rate_tick -- called once per incoming application-layer packet
  * at the border router.  Feeds the CPU_LOAD flood proxy (pkt_rate_cb).
  *
  * Thesis reference: Sec 5.3.3 (CoAP flooding scenario).  On Cooja the

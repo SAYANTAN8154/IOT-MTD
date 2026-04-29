@@ -14,7 +14,7 @@
  *   3. Listens for incoming sensor data on SENSOR_UDP_SERVER_PORT and
  *      counts packet delivery (used as the PDR metric in evaluation).
  *
- * Anomaly detection — application-layer payload port check:
+ * Anomaly detection -- application-layer payload port check:
  *   Every sensor payload carries a "port=<active_port>" field that
  *   reflects the sensor's current MTD port identity.  After each port
  *   hop the orchestrator updates its expected port (mtd_get_current_port()).
@@ -78,7 +78,7 @@ static struct simple_udp_connection server_conn;
 
 /*---------------------------------------------------------------------------*/
 /*
- * parse_payload_port — extract the port=N field from a sensor payload.
+ * parse_payload_port -- extract the port=N field from a sensor payload.
  *
  * Sensor and attacker payloads have the format:
  *   "seq=<n>,port=<p>"      (legitimate sensor)
@@ -105,7 +105,7 @@ parse_payload_port(const uint8_t *data, uint16_t datalen)
 
 /*---------------------------------------------------------------------------*/
 /*
- * Receive callback — handles data from sensor nodes (and potentially attackers).
+ * Receive callback -- handles data from sensor nodes (and potentially attackers).
  *
  * Anomaly detection logic:
  *   1. Parse the "port=N" field from the payload.
@@ -127,7 +127,7 @@ udp_rx_callback(struct simple_udp_connection *c,
                 uint16_t datalen)
 {
   /*
-   * Rate limiting — enforced only when a flooding episode is active
+   * Rate limiting -- enforced only when a flooding episode is active
    * (cpu_load_pct > MTD_CPU_THRESHOLD_PCT as measured by the orchestrator's
    * Energest monitor).  When the per-second packet cap MTD_RATE_LIMIT_PPS
    * is exceeded, the packet is silently discarded to protect the CPU.
@@ -161,12 +161,12 @@ udp_rx_callback(struct simple_udp_connection *c,
    * a grace token so the very first packet after boot is never falsely flagged.
    */
   /*
-   * Anomaly check — realistic sliding-window detection:
+   * Anomaly check -- realistic sliding-window detection:
    *
    *   Accept: current_port (fully up-to-date sensor)
-   *           previous_port (missed exactly one hop — sliding window tolerance)
+   *           previous_port (missed exactly one hop -- sliding window tolerance)
    *           SENSOR_UDP_CLIENT_PORT (8765) ONLY while initial grace is active
-   *             (first two hop cycles, ~120 s) — thereafter 8765 is anomalous.
+   *             (first two hop cycles, ~120 s) -- thereafter 8765 is anomalous.
    *
    * The initial grace covers the boot-up period before sensors have received
    * their first port update.  After the second hop every actively transmitting
@@ -191,7 +191,7 @@ udp_rx_callback(struct simple_udp_connection *c,
   }
 
   /*
-   * Piggyback port update — send CMD_PORT_HOP back to this sensor immediately
+   * Piggyback port update -- send CMD_PORT_HOP back to this sensor immediately
    * while the reverse IP route is still fresh in the stack.  This is the
    * primary mechanism ensuring all active sensors stay current with the MTD
    * port, working around RPL-Lite non-storing mode's lack of proactive
@@ -201,7 +201,7 @@ udp_rx_callback(struct simple_udp_connection *c,
   mtd_send_port_update(sender_addr);
 #endif
 
-  /* Valid packet — log it for PDR calculation */
+  /* Valid packet -- log it for PDR calculation */
   LOG_INFO("RX [%lu] payload_port=%u from ", (unsigned long)pkts_received, payload_port);
   LOG_INFO_6ADDR(sender_addr);
   LOG_INFO_(" len=%u data=%.*s\n",
@@ -229,7 +229,7 @@ PROCESS_THREAD(border_router_process, ev, data)
   LOG_INFO("Border router starting\n");
 
   /*
-   * Step 1 — Become the RPL DAG root.
+   * Step 1 -- Become the RPL DAG root.
    * This node will send RPL DIO messages, and sensor nodes will
    * join the DODAG and establish routes back to this node.
    */
@@ -237,7 +237,7 @@ PROCESS_THREAD(border_router_process, ev, data)
   LOG_INFO("RPL DAG root started\n");
 
   /*
-   * Step 2 — Register the server UDP connection.
+   * Step 2 -- Register the server UDP connection.
    * Sensor nodes send data to SENSOR_UDP_SERVER_PORT (5678).
    */
   simple_udp_register(&server_conn,
@@ -248,7 +248,7 @@ PROCESS_THREAD(border_router_process, ev, data)
   LOG_INFO("Listening on UDP port %u\n", SENSOR_UDP_SERVER_PORT);
 
   /*
-   * Step 3 — Start the MTD orchestrator.
+   * Step 3 -- Start the MTD orchestrator.
    * This arms the proactive shuffle/hop timers and the port-hop timer.
    *
    * When compiled with -DMTD_DISABLED=1 (used by mtd_nomtd.csc) the
@@ -258,7 +258,7 @@ PROCESS_THREAD(border_router_process, ev, data)
 #ifndef MTD_DISABLED
   mtd_orchestrator_init();
 #else
-  LOG_INFO("MTD orchestrator DISABLED (MTD_DISABLED=1) — no shuffle/hop timers\n");
+  LOG_INFO("MTD orchestrator DISABLED (MTD_DISABLED=1) -- no shuffle/hop timers\n");
 #endif /* MTD_DISABLED */
 
   /* Print a metrics summary every 5 minutes */
