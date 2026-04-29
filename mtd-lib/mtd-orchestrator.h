@@ -10,19 +10,19 @@
  * The orchestrator tracks anomaly counts per type so the reactive handler
  * can select the most appropriate MTD technique:
  *
- *   STALE_PORT   — payload port does not match current/previous MTD port.
+ *   STALE_PORT   -- payload port does not match current/previous MTD port.
  *                  Signals active scanning or replay; counter driven by the
  *                  application-layer port check in border-router.c.
  *                  Reactive response: IPv6 IID shuffle (change address
  *                  identity to break ongoing reconnaissance).
  *
- *   CONN_FAILURE — unicast CMD_PORT_HOP or CMD_ADDR_SHUFFLE delivery failed.
+ *   CONN_FAILURE -- unicast CMD_PORT_HOP or CMD_ADDR_SHUFFLE delivery failed.
  *                  Signals probing-induced routing disruption; counter driven
  *                  by send-failure detection in broadcast helpers.
  *                  Reactive response: immediate port hop (restore a clean
  *                  communication channel with a new port identity).
  *
- *   CPU_LOAD     — Energest CPU ratio exceeds MTD_CPU_THRESHOLD_PCT within
+ *   CPU_LOAD     -- Energest CPU ratio exceeds MTD_CPU_THRESHOLD_PCT within
  *                  a MTD_CPU_WINDOW_S monitoring window.  Signals flooding.
  *                  Reactive response: IPv6 IID shuffle + activate rate
  *                  limiting to throttle excess traffic at the application
@@ -55,7 +55,7 @@ void mtd_orchestrator_init(void);
 void mtd_report_anomaly_typed(mtd_anomaly_type_t type);
 
 /**
- * Convenience wrapper — reports MTD_ANOMALY_STALE_PORT.
+ * Convenience wrapper -- reports MTD_ANOMALY_STALE_PORT.
  * Kept for backward compatibility with existing call sites in border-router.c.
  */
 void mtd_report_anomaly(void);
@@ -88,7 +88,7 @@ uint16_t mtd_get_previous_port(void);
 
 /**
  * Returns non-zero while the initial boot-port (SENSOR_UDP_CLIENT_PORT)
- * grace is still active — i.e. before the second port hop has fired.
+ * grace is still active -- i.e. before the second port hop has fired.
  * After the second hop all sensors have had >=120 s of piggyback replies
  * and are expected to be running a current MTD port; port 8765 then
  * becomes anomalous just like any other stale value.
@@ -108,10 +108,10 @@ void mtd_send_port_update(const uip_ipaddr_t *addr);
  * Register a sensor node address so the orchestrator can unicast
  * CMD_PORT_HOP and CMD_ADDR_SHUFFLE to it.
  * Call this from border-router.c each time a valid packet arrives.
- * Uses a ring buffer — oldest entry evicted when full.
+ * Uses a ring buffer -- oldest entry evicted when full.
  *
  * Also updates the per-sensor last-seen timestamp used by the silence
- * watchdog (thesis Sec 5.3.2 — RPL sinkhole detection).
+ * watchdog (thesis Sec 5.3.2 -- RPL sinkhole detection).
  */
 void mtd_register_sensor(const uip_ipaddr_t *addr);
 

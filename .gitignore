@@ -10,3 +10,12 @@ build/
 COOJA.testlog
 obj/
 .deps/
+
+# Toolchain archive (downloaded separately, do not commit)
+mspgcc-*.tar.bz2
+
+# Editor / Overleaf caches and thesis sources
+.overleaf-cache/
+Master_Thesis___MTD/
+section6_implementation.tex
+tikz/
