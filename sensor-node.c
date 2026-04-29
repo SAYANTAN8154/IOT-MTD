@@ -49,8 +49,8 @@
 /* Command bytes sent by the orchestrator                                     */
 /*---------------------------------------------------------------------------*/
 #define CMD_PORT_HOP     0x01   /* payload: 2-byte new port (big-endian) */
-#define CMD_ADDR_ACK     0x02   /* payload: none — orchestrator ack       */
-#define CMD_ADDR_SHUFFLE 0x03   /* payload: none — shuffle own IPv6 IID   */
+#define CMD_ADDR_ACK     0x02   /* payload: none -- orchestrator ack       */
+#define CMD_ADDR_SHUFFLE 0x03   /* payload: none -- shuffle own IPv6 IID   */
 
 /*---------------------------------------------------------------------------*/
 /* Energest logging interval (every 60 s)                                    */
@@ -212,7 +212,7 @@ PROCESS_THREAD(sensor_node_process, ev, data)
         LOG_INFO_("\n");
 
       } else {
-        LOG_INFO("Not yet routable — skipping TX (seq=%lu)\n",
+        LOG_INFO("Not yet routable -- skipping TX (seq=%lu)\n",
                  (unsigned long)seq_num);
       }
 

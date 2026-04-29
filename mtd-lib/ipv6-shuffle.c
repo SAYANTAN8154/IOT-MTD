@@ -50,7 +50,7 @@ ipv6_shuffle_address(void)
    */
   addr = uip_ds6_get_link_local(-1);
   if(addr == NULL) {
-    LOG_WARN("No link-local address found — shuffle aborted\n");
+    LOG_WARN("No link-local address found -- shuffle aborted\n");
     return;
   }
 
