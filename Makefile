@@ -30,4 +30,13 @@ MAKE_WITH_ENERGEST = 1
 # Enable RPL
 MAKE_WITH_RPL = 1
 
+# Tmote Sky has only 48KB flash and 10KB RAM.  The default Contiki-NG
+# build does not optimise for size, which pushes the unity-built MTD
+# firmware over the flash limit.  Enable -Os and dead-code/-data
+# elimination ONLY for TARGET=sky so the contikimote build is unaffected.
+ifeq ($(TARGET),sky)
+  CFLAGS  += -Os -ffunction-sections -fdata-sections
+  LDFLAGS += -Wl,--gc-sections
+endif
+
 include $(CONTIKI)/Makefile.include
