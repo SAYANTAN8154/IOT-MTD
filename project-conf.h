@@ -57,14 +57,24 @@
  * traffic at 20 pkt/s = 200 pkts/window comfortably exceeds 80. */
 #define MTD_FLOOD_PPS_THRESHOLD  80   /* >80 pkts within MTD_CPU_WINDOW_S → flood */
 
-/* Rate limiting -- application-layer packet cap per second            */
-#define MTD_RATE_LIMIT_PPS       20   /* max packets/s before dropping excess  */
+/* Rate limiting -- application-layer packet cap per second.
+ * Set to 10 pkt/s so the limiter actually engages during a 20-pkt/s
+ * flood (with 25 legitimate sensors at ~2.5 pkt/s, total ~22.5 pkt/s
+ * comfortably exceeds the cap).  Legitimate traffic stays below 10
+ * during normal operation. */
+#define MTD_RATE_LIMIT_PPS       10   /* max packets/s before dropping excess  */
 
 /* Sensor-silence watchdog -- used to detect RPL sinkhole / routing disruption.
  * A registered sensor that has not transmitted for this many seconds is
- * flagged as a CONN_FAILURE anomaly.  Must be > 2*SENSOR_SEND_INTERVAL_S
- * so that a single missed transmission does not falsely trigger. */
-#define MTD_SILENCE_TIMEOUT_S    45
+ * flagged as a CONN_FAILURE anomaly.
+ *
+ * Set to 25s = 2.5 * SENSOR_SEND_INTERVAL_S (10s).  With CSMA fairness
+ * the radio-disruption sinkhole approximation does not silence sensors
+ * for 45s+ stretches; 25s is the smallest threshold that still rules
+ * out single isolated packet losses (one missed send = 20s elapsed,
+ * which stays under 25s).  Two consecutive missed sends = ~30s, well
+ * over the threshold, which is the realistic sinkhole signature. */
+#define MTD_SILENCE_TIMEOUT_S    25
 #define MTD_SILENCE_TIMEOUT      (MTD_SILENCE_TIMEOUT_S * CLOCK_SECOND)
 #define MTD_SILENCE_CHECK_S      15   /* watchdog poll interval */
 #define MTD_SILENCE_CHECK        (MTD_SILENCE_CHECK_S * CLOCK_SECOND)

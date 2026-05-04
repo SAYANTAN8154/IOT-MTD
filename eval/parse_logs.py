@@ -1,0 +1,333 @@
+#!/usr/bin/env python3
+"""
+parse_logs.py
+
+Extracts the metrics used in the thesis Evaluation chapter from the
+Cooja log files of the Sky-target simulation runs.
+
+Inputs (six files, three scenarios * two conditions):
+  mt_attack_scan_sky.txt          MTD-on  scan
+  mt_attack_sinkhole_sky.txt      MTD-on  sinkhole
+  mt_attack_flood_sky.txt         MTD-on  flood
+  nomtd_scan_sky.txt              no-MTD  scan
+  nomtd_sinkhole_sky.txt          no-MTD  sinkhole
+  nomtd_flood_sky.txt             no-MTD  flood
+
+Outputs:
+  - Console table (one row per (scenario, condition))
+  - results.json with the same numbers in machine-readable form
+
+Energy conversion uses Tmote Sky datasheet currents (3 V supply):
+  CPU active: 1.8 mA       LPM: 0.0545 mA
+  Radio TX:   17.4 mA      Radio RX: 19.7 mA
+  Tick rate:  32768 Hz (RTIMER_SECOND on Sky)
+
+Energy in millijoules:
+  E = (ticks / 32768) * current_mA * voltage_V
+
+Usage:
+  python eval/parse_logs.py
+"""
+from __future__ import annotations
+
+import json
+import re
+import sys
+from dataclasses import dataclass, asdict, field
+from pathlib import Path
+from statistics import mean, stdev
+from typing import Dict, List, Optional, Tuple
+
+# -- Sky datasheet (Tmote Sky / CC2420) -----------------------------------
+TICK_HZ        = 32768          # RTIMER_SECOND on Sky
+SUPPLY_V       = 3.0
+I_CPU_MA       = 1.8
+I_LPM_MA       = 0.0545
+I_TX_MA        = 17.4
+I_RX_MA        = 19.7
+
+SIM_DURATION_S = 30 * 60        # 30 simulated minutes per run
+SENSOR_COUNT   = 25             # legitimate sensor nodes
+SENSOR_PERIOD  = 10             # seconds between sensor sends
+EXPECTED_SENDS = SENSOR_COUNT * (SIM_DURATION_S // SENSOR_PERIOD)
+
+
+# -------------------------------------------------------------------------
+# Data classes
+# -------------------------------------------------------------------------
+@dataclass
+class RunResult:
+    scenario:           str
+    condition:          str             # "mtd" or "nomtd"
+    log_file:           str
+
+    # MTD activity
+    proactive_shuffles: int = 0
+    proactive_hops:     int = 0
+    reactive_cycles:    int = 0
+    cooldown_suppress:  int = 0
+    dominant_0:         int = 0          # STALE_PORT
+    dominant_1:         int = 0          # CONN_FAILURE
+    dominant_2:         int = 0          # CPU_LOAD
+
+    # Detection events
+    anomaly_warns:      int = 0          # WARN: BorderRouter ANOMALY
+    silence_events:     int = 0
+    rate_limit_drops:   int = 0
+
+    # Per-type counter increments (raw events, not the dominant of a cycle)
+    anomaly_type_0:     int = 0          # STALE_PORT raw
+    anomaly_type_1:     int = 0          # CONN_FAILURE raw
+    anomaly_type_2:     int = 0          # CPU_LOAD raw
+
+    # Traffic
+    br_rx_total:        int = 0          # last BR_METRICS rx
+    br_anomalous_total: int = 0          # last BR_METRICS anomalous
+
+    # Detection latency (seconds from attacker warm-up end to first detection)
+    attacker_start_s:           Optional[float] = None
+    first_detection_s:          Optional[float] = None
+    first_reactive_s:           Optional[float] = None
+
+    # Energest at end of run
+    br_cpu_ticks:       int = 0
+    br_lpm_ticks:       int = 0
+    br_tx_ticks:        int = 0
+    br_rx_ticks:        int = 0
+
+    sensor_cpu_ticks:   List[int] = field(default_factory=list)
+    sensor_lpm_ticks:   List[int] = field(default_factory=list)
+    sensor_tx_ticks:    List[int] = field(default_factory=list)
+    sensor_rx_ticks:    List[int] = field(default_factory=list)
+
+    # Computed
+    pdr:                Optional[float]  = None
+    detection_latency_s:Optional[float]  = None
+    reaction_latency_s: Optional[float]  = None
+    br_energy_mj:       Optional[float]  = None
+    sensor_energy_mj_mean: Optional[float] = None
+    sensor_energy_mj_std:  Optional[float] = None
+
+
+# -------------------------------------------------------------------------
+# Log parsing
+# -------------------------------------------------------------------------
+TS_RE = re.compile(r"^(\d+):(\d+)\.(\d+)\s+ID:(\d+)\s+(.*)$")
+
+def parse_ts_to_sec(line: str) -> Optional[float]:
+    """Parse the leading 'MM:SS.mmm' timestamp into seconds."""
+    m = TS_RE.match(line)
+    if not m:
+        return None
+    minutes = int(m.group(1))
+    seconds = int(m.group(2))
+    msec    = int(m.group(3))
+    return minutes * 60 + seconds + msec / 1000.0
+
+
+def parse_log(path: Path, scenario: str, condition: str) -> RunResult:
+    r = RunResult(scenario=scenario, condition=condition, log_file=path.name)
+
+    last_br_metrics_rx        = 0
+    last_br_metrics_anomalous = 0
+    last_br_energest: Optional[Tuple[int, int, int, int]] = None
+    last_sensor_energest: Dict[int, Tuple[int, int, int, int]] = {}
+
+    with path.open(encoding="utf-8", errors="replace") as fp:
+        for raw in fp:
+            line = raw.rstrip()
+            ts   = parse_ts_to_sec(line)
+
+            # Attacker start
+            if r.attacker_start_s is None and "Attacker started" in line:
+                r.attacker_start_s = ts
+
+            # MTD activity
+            if "MTD Shuffle Cycle" in line:
+                r.proactive_shuffles += 1
+            if "=== MTD Port Hop" in line:
+                r.proactive_hops += 1
+            if "MTD Reactive Cycle" in line:
+                r.reactive_cycles += 1
+                if r.first_reactive_s is None:
+                    r.first_reactive_s = ts
+            if "cooldown active" in line:
+                r.cooldown_suppress += 1
+            if "dominant=0" in line:
+                r.dominant_0 += 1
+            if "dominant=1" in line:
+                r.dominant_1 += 1
+            if "dominant=2" in line:
+                r.dominant_2 += 1
+
+            # Per-type anomaly increments
+            if "Anomaly type=0" in line:
+                r.anomaly_type_0 += 1
+            elif "Anomaly type=1" in line:
+                r.anomaly_type_1 += 1
+            elif "Anomaly type=2" in line:
+                r.anomaly_type_2 += 1
+
+            # Detection events at the BR
+            if "[WARN: BorderRouter] ANOMALY" in line:
+                r.anomaly_warns += 1
+                if r.first_detection_s is None:
+                    r.first_detection_s = ts
+            if "SILENCE sensor" in line and "skipped" not in line:
+                r.silence_events += 1
+                if r.first_detection_s is None:
+                    r.first_detection_s = ts
+            if "RATE_LIMIT drop" in line:
+                r.rate_limit_drops += 1
+
+            # BR_METRICS  (cumulative, keep the last)
+            m = re.search(r"BR_METRICS rx=(\d+) anomalous=(\d+)", line)
+            if m:
+                last_br_metrics_rx        = int(m.group(1))
+                last_br_metrics_anomalous = int(m.group(2))
+
+            # BR Energest  (cumulative, keep the last)
+            m = re.search(r"BR_ENERGEST cpu=(\d+) lpm=(\d+) tx=(\d+) rx=(\d+)", line)
+            if m:
+                last_br_energest = tuple(int(g) for g in m.groups())
+
+            # Sensor Energest  (cumulative per node; keep the last per node)
+            m = re.search(
+                r"ID:(\d+).*ENERGEST cpu=(\d+) lpm=(\d+) tx=(\d+) rx=(\d+)", line
+            )
+            if m and "BR_ENERGEST" not in line:
+                node_id = int(m.group(1))
+                if node_id != 1 and node_id != 31:
+                    # Skip BR (id 1) and attacker (id 31).  Counting only the
+                    # 29 legitimate sender nodes (RPL routers + sensors).
+                    last_sensor_energest[node_id] = tuple(int(g) for g in m.groups()[1:])
+
+    r.br_rx_total        = last_br_metrics_rx
+    r.br_anomalous_total = last_br_metrics_anomalous
+
+    if last_br_energest is not None:
+        r.br_cpu_ticks, r.br_lpm_ticks, r.br_tx_ticks, r.br_rx_ticks = last_br_energest
+
+    for cpu, lpm, tx, rx in last_sensor_energest.values():
+        r.sensor_cpu_ticks.append(cpu)
+        r.sensor_lpm_ticks.append(lpm)
+        r.sensor_tx_ticks.append(tx)
+        r.sensor_rx_ticks.append(rx)
+
+    # Derived
+    r.pdr = r.br_rx_total / EXPECTED_SENDS if EXPECTED_SENDS else None
+
+    if r.first_detection_s is not None and r.attacker_start_s is not None:
+        # Detection latency from end of attacker warmup (45 s after start)
+        warmup_end = r.attacker_start_s + 45
+        r.detection_latency_s = max(0.0, r.first_detection_s - warmup_end)
+
+    if r.first_reactive_s is not None and r.first_detection_s is not None:
+        r.reaction_latency_s = max(0.0, r.first_reactive_s - r.first_detection_s)
+
+    r.br_energy_mj = energy_mj(
+        r.br_cpu_ticks, r.br_lpm_ticks, r.br_tx_ticks, r.br_rx_ticks
+    )
+
+    if r.sensor_cpu_ticks:
+        per_sensor_mj = [
+            energy_mj(c, l, t, x)
+            for c, l, t, x in zip(
+                r.sensor_cpu_ticks, r.sensor_lpm_ticks,
+                r.sensor_tx_ticks,  r.sensor_rx_ticks,
+            )
+        ]
+        r.sensor_energy_mj_mean = mean(per_sensor_mj)
+        if len(per_sensor_mj) > 1:
+            r.sensor_energy_mj_std = stdev(per_sensor_mj)
+
+    return r
+
+
+def energy_mj(cpu: int, lpm: int, tx: int, rx: int) -> float:
+    """Convert Energest ticks (Sky target) to millijoules."""
+    return (
+        (cpu / TICK_HZ) * I_CPU_MA * SUPPLY_V
+        + (lpm / TICK_HZ) * I_LPM_MA * SUPPLY_V
+        + (tx  / TICK_HZ) * I_TX_MA  * SUPPLY_V
+        + (rx  / TICK_HZ) * I_RX_MA  * SUPPLY_V
+    )
+
+
+# -------------------------------------------------------------------------
+# Reporting
+# -------------------------------------------------------------------------
+COLS = [
+    ("scenario",            "scenario",            "{:>9}"),
+    ("condition",           "condition",           "{:>6}"),
+    ("br_rx",               "br_rx_total",         "{:>7}"),
+    ("anom_warn",           "anomaly_warns",       "{:>7}"),
+    ("react",               "reactive_cycles",     "{:>5}"),
+    ("d0/d1/d2",            None,                  "{:>10}"),
+    ("silence",             "silence_events",      "{:>7}"),
+    ("ratelim",             "rate_limit_drops",    "{:>7}"),
+    ("PDR",                 "pdr",                 "{:>6}"),
+    ("det_lat_s",           "detection_latency_s", "{:>9}"),
+    ("rxn_lat_s",           "reaction_latency_s",  "{:>9}"),
+    ("BR_E_mJ",             "br_energy_mj",        "{:>9}"),
+    ("Sens_E_mJ",           "sensor_energy_mj_mean","{:>9}"),
+]
+
+
+def fmt_cell(r: RunResult, attr: Optional[str], spec: str) -> str:
+    if attr is None:
+        return spec.format(f"{r.dominant_0}/{r.dominant_1}/{r.dominant_2}")
+    v = getattr(r, attr)
+    if isinstance(v, float):
+        if attr == "pdr":
+            return spec.format(f"{v:.3f}")
+        return spec.format(f"{v:.2f}")
+    if v is None:
+        return spec.format("-")
+    return spec.format(v)
+
+
+def print_table(results: List[RunResult]) -> None:
+    header = " ".join(spec.format(name) for name, _, spec in COLS)
+    print(header)
+    print("-" * len(header))
+    for r in results:
+        print(" ".join(fmt_cell(r, attr, spec) for _, attr, spec in COLS))
+
+
+def write_json(results: List[RunResult], out_path: Path) -> None:
+    payload = [asdict(r) for r in results]
+    out_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+# -------------------------------------------------------------------------
+# Main
+# -------------------------------------------------------------------------
+def main() -> int:
+    project_dir = Path(__file__).resolve().parent.parent
+
+    log_set = [
+        ("scan",     "mtd",   project_dir / "mt_attack_scan_sky.txt"),
+        ("sinkhole", "mtd",   project_dir / "mt_attack_sinkhole_sky.txt"),
+        ("flood",    "mtd",   project_dir / "mt_attack_flood_sky.txt"),
+        ("scan",     "nomtd", project_dir / "nomtd_scan_sky.txt"),
+        ("sinkhole", "nomtd", project_dir / "nomtd_sinkhole_sky.txt"),
+        ("flood",    "nomtd", project_dir / "nomtd_flood_sky.txt"),
+    ]
+
+    results: List[RunResult] = []
+    for scenario, condition, path in log_set:
+        if not path.exists():
+            print(f"[skip] missing log: {path.name}", file=sys.stderr)
+            continue
+        results.append(parse_log(path, scenario, condition))
+
+    print_table(results)
+    write_json(results, project_dir / "eval" / "results.json")
+    print()
+    print(f"wrote eval/results.json")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

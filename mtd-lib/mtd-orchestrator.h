@@ -73,6 +73,19 @@ void mtd_report_anomaly(void);
 uint8_t mtd_rate_limit_check(void);
 
 /**
+ * Returns non-zero when a flooding event is currently being mitigated
+ * (i.e. the rate limiter is armed because the CPU_LOAD reactive branch
+ * fired and the load has not yet recovered).
+ *
+ * Used by border-router.c to suppress STALE_PORT classification during
+ * a flood window: under heavy reactive shuffling, legitimate sensors
+ * may temporarily fall two hops behind on their port token, which would
+ * otherwise saturate the STALE_PORT counter and outweigh the CPU_LOAD
+ * signal in the dominant-type selection.
+ */
+uint8_t mtd_flood_active(void);
+
+/**
  * Get the current active UDP port for sensor communication.
  * Sensor nodes query this after receiving a port-update command.
  */
