@@ -71,10 +71,12 @@
   #define ATTACK_SEND_MS         200
   #define ATTACK_LABEL           "SCAN"
 #elif ATTACK_MODE == ATTACK_MODE_SINKHOLE
-  /* 5 broadcast storms/s -- aggressive but within UDGM capacity.
-   * Drowns legitimate uplinks via radio collisions; sensors then
-   * fall silent and the silence watchdog raises CONN_FAILURE. */
-  #define ATTACK_SEND_MS         200
+  /* 10 broadcast storms/s.  Sweet spot for the CSMA-fairness limit:
+   * 5/s was too mild, 20/s let CSMA back-off equalise channel access
+   * (sinkhole's own sends started failing too).  10/s causes
+   * meaningful collision pressure on near-attacker sensors without
+   * the attacker itself being penalised by CSMA. */
+  #define ATTACK_SEND_MS         100
   #define ATTACK_LABEL           "SINK"
 #elif ATTACK_MODE == ATTACK_MODE_FLOOD
   /* 20 flood packets/s.  Produces 200 pkts per 10s window, which
@@ -229,16 +231,18 @@ PROCESS_THREAD(attacker_process, ev, data)
      * as CONN_FAILURE (failure_rate indicator) -- see
      * mtd-orchestrator.c :: silence_watchdog_cb().
      *
-     * The payload carries a stale-port marker so that any packet the
-     * attacker DOES manage to unicast-relay (e.g. in future rpl-attacks
-     * integration) would also trip the STALE_PORT detector.
+     * The payload deliberately omits the "port=" token: the sinkhole's
+     * intended detection path is the silence watchdog (CONN_FAILURE),
+     * not the stale-port check.  Including a stale port would saturate
+     * the STALE_PORT counter so heavily that the dominant-type
+     * selector would always route to the IPv6-shuffle branch instead
+     * of the port-hop branch, hiding the silence signal.
      */
     {
       char buf[64];
       int len = snprintf(buf, sizeof(buf),
-                         "SINK seq=%lu,port=%u,rank=1",
-                         (unsigned long)seq_num++,
-                         (unsigned)ATTACK_STALE_PORT);
+                         "SINK seq=%lu rank=1",
+                         (unsigned long)seq_num++);
       /* Pad to a typical sensor packet size to match realistic
        * collision footprint. */
       while(len < 40 && len < (int)(sizeof(buf) - 1)) {
