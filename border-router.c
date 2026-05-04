@@ -186,7 +186,21 @@ udp_rx_callback(struct simple_udp_connection *c,
              payload_port, mtd_get_current_port());
     LOG_WARN_6ADDR(sender_addr);
     LOG_WARN_("\n");
+    /*
+     * Suppress STALE_PORT classification while a flood is being mitigated.
+     * Aggressive reactive shuffling under flood causes legitimate sensors
+     * to occasionally fall two hops behind on their port token, which
+     * would otherwise saturate the STALE_PORT counter and outweigh the
+     * CPU_LOAD signal in the dominant-type selector.  The packet is still
+     * dropped (the return below); we just do not feed the typed counter.
+     */
+#ifndef MTD_DISABLED
+    if(!mtd_flood_active()) {
+      mtd_report_anomaly();
+    }
+#else
     mtd_report_anomaly();
+#endif
     return;
   }
 

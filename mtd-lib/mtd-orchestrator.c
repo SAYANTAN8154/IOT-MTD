@@ -408,14 +408,26 @@ reactive_shuffle_cb(void *ptr)
   cycle_count++;
 
   /* ---- Determine dominant threat type ---------------------------------- */
-  mtd_anomaly_type_t threat = MTD_ANOMALY_STALE_PORT;
-  uint8_t max_count = 0;
+  /*
+   * Severity-priority selection.  Rare-but-severe signals always win
+   * over high-frequency noisy ones:
+   *
+   *   CONN_FAILURE   (silence -- real loss of network state)  -- highest
+   *   CPU_LOAD       (sustained flood detected by packet rate)
+   *   STALE_PORT     (replay / scan -- the default fallback)
+   *
+   * This replaces a pure "max count" rule that would otherwise let the
+   * noisy STALE_PORT counter dominate even when a single severe event
+   * triggered the reactive cycle.
+   */
+  mtd_anomaly_type_t threat;
   uint8_t t;
-  for(t = 0; t < MTD_ANOMALY_TYPE_COUNT; t++) {
-    if(anomaly_counts[t] > max_count) {
-      max_count = anomaly_counts[t];
-      threat = (mtd_anomaly_type_t)t;
-    }
+  if(anomaly_counts[MTD_ANOMALY_CONN_FAILURE] > 0) {
+    threat = MTD_ANOMALY_CONN_FAILURE;
+  } else if(anomaly_counts[MTD_ANOMALY_CPU_LOAD] > 0) {
+    threat = MTD_ANOMALY_CPU_LOAD;
+  } else {
+    threat = MTD_ANOMALY_STALE_PORT;
   }
 
   LOG_INFO("=== MTD Reactive Cycle #%lu threshold=%u dominant=%u ===\n",
@@ -552,11 +564,16 @@ cpu_monitor_cb(void *ptr)
     LOG_WARN("CPU load %u%% exceeds threshold -- reporting flooding anomaly\n",
              cpu_load_pct);
     mtd_report_anomaly_typed(MTD_ANOMALY_CPU_LOAD);
-  } else if(rate_limit_armed) {
-    /* Load has recovered -- disarm the rate limiter */
-    rate_limit_armed = 0;
-    LOG_INFO("CPU load nominal -- rate limiter DISARMED\n");
   }
+  /*
+   * NOTE: the rate limiter is no longer disarmed here.  On the Sky target
+   * the CPU% reading stays low (4-18%) even during a heavy flood because
+   * MSPSim runs the radio path very efficiently, so disarming based on
+   * cpu_load_pct < threshold immediately undoes the limiter every window
+   * even while the flood is still active.  Disarming is now driven by
+   * the packet-rate proxy (pkt_rate_cb) which is the true flood signal
+   * on this target.
+   */
 
   ctimer_reset(&cpu_monitor_timer);
 }
@@ -600,6 +617,16 @@ pkt_rate_cb(void *ptr)
     LOG_WARN("Packet rate %u/%ds exceeds threshold %u -- reporting flooding anomaly\n",
              count, MTD_CPU_WINDOW_S, MTD_FLOOD_PPS_THRESHOLD);
     mtd_report_anomaly_typed(MTD_ANOMALY_CPU_LOAD);
+  } else if(rate_limit_armed) {
+    /*
+     * Packet rate has dropped back below the flood threshold AND
+     * rate-limit branch was active.  This is the correct disarm
+     * condition: the actual flood signal (packet rate) has subsided,
+     * not just the CPU% reading.  Limiter self-clears so normal
+     * traffic resumes without manual intervention.
+     */
+    rate_limit_armed = 0;
+    LOG_INFO("Packet rate nominal -- rate limiter DISARMED\n");
   }
 
   ctimer_reset(&pkt_rate_timer);
@@ -753,7 +780,21 @@ mtd_report_anomaly_typed(mtd_anomaly_type_t type)
   LOG_INFO("Anomaly type=%u count=%u/%u\n",
            (uint8_t)type, anomaly_count, MTD_THREAT_THRESHOLD);
 
-  if(anomaly_count >= MTD_THREAT_THRESHOLD) {
+  /*
+   * Per-type firing policy.  STALE_PORT is a noisy high-frequency signal
+   * (legitimate sensors falling one or two hops behind during heavy
+   * reactive activity), so it requires accumulation to MTD_THREAT_THRESHOLD
+   * before firing.  CONN_FAILURE and CPU_LOAD are rare-but-severe signals
+   * (each event represents a real deviation: a missing sensor or a
+   * sustained packet-rate flood), so they fire reactive immediately on the
+   * first event.  Without this distinction, the noisy STALE_PORT counter
+   * always wins the dominant-type race and the CONN_FAILURE / CPU_LOAD
+   * branches are unreachable in practice.
+   */
+  uint8_t severe = (type == MTD_ANOMALY_CONN_FAILURE ||
+                    type == MTD_ANOMALY_CPU_LOAD);
+
+  if(severe || anomaly_count >= MTD_THREAT_THRESHOLD) {
     /*
      * Cooldown gate (thesis Sec 4.5.1 / Table 6).  A reactive cycle is
      * only fired if MTD_COOLDOWN_S seconds have elapsed since the last
@@ -847,6 +888,19 @@ mtd_rate_limit_check(void)
     return 1;   /* drop -- window saturated */
   }
   return 0;
+}
+
+/*---------------------------------------------------------------------------*/
+/*
+ * mtd_flood_active -- non-zero while the CPU_LOAD branch is still mitigating
+ * a flood (rate limiter armed).  The CPU monitor clears rate_limit_armed
+ * automatically when the load drops back below MTD_CPU_THRESHOLD_PCT, so
+ * this also self-clears.
+ */
+uint8_t
+mtd_flood_active(void)
+{
+  return rate_limit_armed;
 }
 
 /*---------------------------------------------------------------------------*/
