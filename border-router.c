@@ -42,7 +42,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <stdlib.h>     /* strtoul, atoi */
 #include <stdlib.h>
 #include <stdint.h>
 
@@ -71,23 +70,6 @@
 /*---------------------------------------------------------------------------*/
 static uint32_t pkts_received  = 0;
 static uint32_t pkts_anomalous = 0;
-
-/* Per-source counters: separate legit-sender vs attacker traffic.
- * "legit" = source IP does NOT match the attacker's well-known ULA
- * suffix (mote ID 31, i.e. 0x741f).  Knowing both buckets lets the
- * parser compute false-positive rate (legit anomalies / legit RX)
- * and scan success rate (attacker RX / attacker injected). */
-static uint32_t legit_rx        = 0;
-static uint32_t legit_anomalous = 0;
-static uint32_t attacker_rx     = 0;
-static uint32_t attacker_anomalous = 0;
-
-/* Per-packet end-to-end latency stats (computed from the t= field in
- * legitimate sensor payloads).  Stored as running sums so the periodic
- * log line carries mean and max without keeping per-packet samples. */
-static uint32_t latency_samples = 0;
-static uint32_t latency_sum_ms  = 0;
-static uint32_t latency_max_ms  = 0;
 
 /*---------------------------------------------------------------------------*/
 /* UDP connection for receiving sensor data                                  */
@@ -119,32 +101,6 @@ parse_payload_port(const uint8_t *data, uint16_t datalen)
     return 0;
   }
   return (uint16_t)atoi(p + 5);
-}
-
-/* Parse the "t=<ms>" TX timestamp from a legitimate sensor payload.
- * Returns 0 if absent.  Attacker payloads do not carry the t= field. */
-static uint32_t
-parse_payload_tx_ts(const uint8_t *data, uint16_t datalen)
-{
-  char buf[64];
-  uint16_t copylen = (datalen < (sizeof(buf) - 1)) ? datalen : (sizeof(buf) - 1);
-  memcpy(buf, data, copylen);
-  buf[copylen] = '\0';
-
-  char *p = strstr(buf, "t=");
-  if(p == NULL) return 0;
-  return (uint32_t)strtoul(p + 2, NULL, 10);
-}
-
-/* Returns 1 if the source IP is the attacker mote (well-known mote ID 31:
- * IID suffix 0x741f from the EUI-64).  We match on the IID byte that
- * encodes the mote ID so we do not depend on the full address. */
-static uint8_t
-is_attacker_source(const uip_ipaddr_t *addr)
-{
-  /* The attacker's deterministic EUI-64 contains 0x74 0x1f in
-   * its lower bytes; match on bytes 9 and 10 of the IPv6 address.  */
-  return (addr->u8[9] == 0x74 && addr->u8[10] == 0x1f);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -188,15 +144,6 @@ udp_rx_callback(struct simple_udp_connection *c,
 
   pkts_received++;
 
-  /* Per-source bucket: attacker traffic vs legitimate sender traffic.
-   * Detected by matching the well-known attacker IID bytes. */
-  uint8_t from_attacker = is_attacker_source(sender_addr);
-  if(from_attacker) {
-    attacker_rx++;
-  } else {
-    legit_rx++;
-  }
-
   /*
    * Register this sender so the orchestrator can later push CMD_PORT_HOP
    * and CMD_ADDR_SHUFFLE back to it.  Duplicate registrations are a no-op.
@@ -207,22 +154,6 @@ udp_rx_callback(struct simple_udp_connection *c,
 
   /* Extract the application-level port identity token from the payload */
   uint16_t payload_port = parse_payload_port(data, datalen);
-
-  /* End-to-end latency: present only on legitimate sensor packets
-   * (attacker payloads do not carry the t= field).  clock_time() is
-   * monotonic and runs at CLOCK_SECOND ticks/sec on both nodes, so
-   * the diff in ticks * 1000 / CLOCK_SECOND gives milliseconds. */
-  if(!from_attacker) {
-    uint32_t t_tx = parse_payload_tx_ts(data, datalen);
-    if(t_tx != 0) {
-      uint32_t now_ticks = (uint32_t)clock_time();
-      uint32_t lat_ticks = now_ticks - t_tx;  /* unsigned wrap is fine */
-      uint32_t lat_ms    = (lat_ticks * 1000UL) / CLOCK_SECOND;
-      latency_samples++;
-      latency_sum_ms += lat_ms;
-      if(lat_ms > latency_max_ms) latency_max_ms = lat_ms;
-    }
-  }
 
   /*
    * Anomaly check: payload port must match the currently expected port.
@@ -250,7 +181,6 @@ udp_rx_callback(struct simple_udp_connection *c,
 
   if(payload_port != 0 && !port_ok) {
     pkts_anomalous++;
-    if(from_attacker) attacker_anomalous++; else legit_anomalous++;
     LOG_WARN("ANOMALY pkt #%lu payload_port=%u expected=%u from ",
              (unsigned long)pkts_received,
              payload_port, mtd_get_current_port());
@@ -362,23 +292,6 @@ PROCESS_THREAD(border_router_process, ev, data)
     LOG_INFO("BR_METRICS rx=%lu anomalous=%lu\n",
              (unsigned long)pkts_received,
              (unsigned long)pkts_anomalous);
-
-    /* Per-source split (legit sender IPs vs attacker IP).
-     * False-positive rate = legit_anom / legit_rx.
-     * Scan/flood ingestion rate = attacker_rx / attacker_packets_sent. */
-    LOG_INFO("BR_SRC_METRICS legit_rx=%lu legit_anom=%lu att_rx=%lu att_anom=%lu\n",
-             (unsigned long)legit_rx,
-             (unsigned long)legit_anomalous,
-             (unsigned long)attacker_rx,
-             (unsigned long)attacker_anomalous);
-
-    /* End-to-end latency aggregates for legitimate sensor packets only. */
-    if(latency_samples > 0) {
-      LOG_INFO("BR_LATENCY samples=%lu mean_ms=%lu max_ms=%lu\n",
-               (unsigned long)latency_samples,
-               (unsigned long)(latency_sum_ms / latency_samples),
-               (unsigned long)latency_max_ms);
-    }
 
     etimer_reset(&metrics_timer);
   }

@@ -96,23 +96,10 @@ class RunResult:
     attacker_useful_window_s:   Optional[float] = None # time from end of warm-up to
                                                        # first reactive cycle
 
-    # Per-source counters from BR_SRC_METRICS (separate legit vs attacker traffic)
-    legit_rx_total:             int = 0
-    legit_anom_total:           int = 0
-    att_rx_total:               int = 0
-    att_anom_total:             int = 0
-    false_positive_rate:        Optional[float] = None  # legit_anom / legit_rx
-    scan_success_rate:          Optional[float] = None  # att_rx / atk_packets_sent
-
-    # End-to-end latency from BR_LATENCY (legitimate sensor packets only)
-    latency_samples:            int = 0
-    latency_mean_ms:            Optional[float] = None
-    latency_max_ms:             Optional[int] = None
-
     # Reconvergence: per-reactive-cycle time for BR RX rate to return to
     # its pre-cycle moving average.  Computed in post-processing from
     # per-packet RX log timestamps; reported here as the mean over all
-    # reactive cycles in the run.
+    # reactive cycles in the run.  No firmware change required.
     reconvergence_mean_s:       Optional[float] = None
     reconvergence_samples:      int = 0
 
@@ -230,27 +217,15 @@ def parse_log(path: Path, scenario: str, condition: str) -> RunResult:
                 if v > r.attacker_packets_sent:
                     r.attacker_packets_sent = v
 
-            # Per-source counters (cumulative, keep the last)
-            m = re.search(
-                r"BR_SRC_METRICS legit_rx=(\d+) legit_anom=(\d+) att_rx=(\d+) att_anom=(\d+)",
-                line)
-            if m:
-                r.legit_rx_total   = int(m.group(1))
-                r.legit_anom_total = int(m.group(2))
-                r.att_rx_total     = int(m.group(3))
-                r.att_anom_total   = int(m.group(4))
-
-            # Latency aggregates (cumulative, keep the last)
-            m = re.search(r"BR_LATENCY samples=(\d+) mean_ms=(\d+) max_ms=(\d+)", line)
-            if m:
-                r.latency_samples = int(m.group(1))
-                r.latency_mean_ms = float(m.group(2))
-                r.latency_max_ms  = int(m.group(3))
+            # (per-source / latency parsing removed -- the firmware
+            # change required to emit those fields does not fit inside
+            # the Tmote Sky 48 KB flash budget; see LIMITATIONS_AND_TODO.txt.)
 
             # Per-packet RX timestamps for reconvergence calc.  The
             # "[INFO: BorderRouter] RX [N]" line fires for every received
-            # packet (legitimate or attacker).  We record the time only;
-            # the actual reconvergence post-processing happens after the loop.
+            # packet (legitimate or attacker).  Both the new short format
+            # ("RX [N]") and the old long format ("RX [N] payload_port=...")
+            # are matched.
             if "[INFO: BorderRouter] RX [" in line:
                 r.rx_event_ts.append(ts)
 
@@ -316,18 +291,10 @@ def parse_log(path: Path, scenario: str, condition: str) -> RunResult:
         warmup_end = r.attacker_start_s + 45
         r.attacker_useful_window_s = max(0.0, r.first_reactive_s - warmup_end)
 
-    # False-positive rate: fraction of legitimate-sender packets the BR
-    # mistakenly flagged as anomalous (caused by sensors falling behind
-    # on a port hop after a reactive shuffle).
-    if r.legit_rx_total > 0:
-        r.false_positive_rate = r.legit_anom_total / r.legit_rx_total
-
-    # Scan success rate: fraction of attacker-injected packets that
-    # reached the BR.  Strictly speaking this is "ingestion rate";
-    # for the scan scenario it corresponds to probes that found a
-    # still-valid target.
-    if r.attacker_packets_sent > 0:
-        r.scan_success_rate = r.att_rx_total / r.attacker_packets_sent
+    # (False-positive rate and scan success rate would need per-source
+    # counters at the BR -- the firmware change to emit them does not
+    # fit inside the Tmote Sky 48 KB flash budget; see
+    # LIMITATIONS_AND_TODO.txt.)
 
     # Reconvergence time after each reactive cycle.
     # For each reactive cycle at time T:
@@ -410,9 +377,6 @@ COLS = [
     ("usefulW_s",           "attacker_useful_window_s", "{:>9}"),
     ("BR_E_mJ",             "br_energy_mj",        "{:>9}"),
     ("Sens_E_mJ",           "sensor_energy_mj_mean","{:>9}"),
-    ("FPR",                 "false_positive_rate", "{:>6}"),
-    ("scanSR",              "scan_success_rate",   "{:>6}"),
-    ("lat_ms",              "latency_mean_ms",     "{:>7}"),
     ("reconv_s",            "reconvergence_mean_s","{:>8}"),
 ]
 
@@ -422,11 +386,8 @@ def fmt_cell(r: RunResult, attr: Optional[str], spec: str) -> str:
         return spec.format(f"{r.dominant_0}/{r.dominant_1}/{r.dominant_2}")
     v = getattr(r, attr)
     if isinstance(v, float):
-        if attr in ("pdr", "attacker_delivery_rate",
-                    "false_positive_rate", "scan_success_rate"):
+        if attr in ("pdr", "attacker_delivery_rate"):
             return spec.format(f"{v:.3f}")
-        if attr == "latency_mean_ms":
-            return spec.format(f"{v:.1f}")
         return spec.format(f"{v:.2f}")
     if v is None:
         return spec.format("-")
