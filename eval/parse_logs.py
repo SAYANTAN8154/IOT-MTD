@@ -47,7 +47,7 @@ I_TX_MA        = 17.4
 I_RX_MA        = 19.7
 
 SIM_DURATION_S = 30 * 60        # 30 simulated minutes per run
-SENSOR_COUNT   = 25             # legitimate sensor nodes
+SENSOR_COUNT   = 29             # legitimate sender nodes (1 BR + 29 sensors)
 SENSOR_PERIOD  = 10             # seconds between sensor sends
 EXPECTED_SENDS = SENSOR_COUNT * (SIM_DURATION_S // SENSOR_PERIOD)
 
@@ -88,6 +88,13 @@ class RunResult:
     attacker_start_s:           Optional[float] = None
     first_detection_s:          Optional[float] = None
     first_reactive_s:           Optional[float] = None
+
+    # Attacker perspective (parsed from *_TX log lines emitted by attacker-node.c)
+    attacker_packets_sent:      int = 0          # max "total=" seen in *_TX logs
+    external_br_rx:             Optional[int] = None   # br_rx minus sensor baseline
+    attacker_delivery_rate:     Optional[float] = None # external_br_rx / packets_sent
+    attacker_useful_window_s:   Optional[float] = None # time from end of warm-up to
+                                                       # first reactive cycle
 
     # Energest at end of run
     br_cpu_ticks:       int = 0
@@ -160,25 +167,43 @@ def parse_log(path: Path, scenario: str, condition: str) -> RunResult:
             if "dominant=2" in line:
                 r.dominant_2 += 1
 
-            # Per-type anomaly increments
+            # Per-type anomaly increments.  The CPU_LOAD raw event (type=2)
+            # is the actual flood detection signal.  Treat it as a "first
+            # detection" event so the latency reported for flood matches the
+            # real packet-rate-monitor trip time, not a downstream side effect.
             if "Anomaly type=0" in line:
                 r.anomaly_type_0 += 1
             elif "Anomaly type=1" in line:
                 r.anomaly_type_1 += 1
             elif "Anomaly type=2" in line:
                 r.anomaly_type_2 += 1
+                if r.first_detection_s is None:
+                    r.first_detection_s = ts
 
             # Detection events at the BR
             if "[WARN: BorderRouter] ANOMALY" in line:
                 r.anomaly_warns += 1
                 if r.first_detection_s is None:
                     r.first_detection_s = ts
-            if "SILENCE sensor" in line and "skipped" not in line:
+            # Count both the watchdog path ("SILENCE sensor #N idle") and the
+            # pre-shuffle drain path ("SILENCE drain #N") -- both raise a real
+            # CONN_FAILURE event.  Exclude the "watchdog skipped" log line.
+            if (("SILENCE sensor" in line) or ("SILENCE drain" in line)) \
+                    and "skipped" not in line:
                 r.silence_events += 1
                 if r.first_detection_s is None:
                     r.first_detection_s = ts
             if "RATE_LIMIT drop" in line:
                 r.rate_limit_drops += 1
+
+            # Attacker TX cumulative counter (attacker-node.c logs "*_TX total=N ..."
+            # every 50 / 25 / 100 sends depending on mode; the "total=" field is the
+            # exact running count, so the max value at end of run is the packets sent).
+            m = re.search(r"(?:SCAN|SINK|FLOOD)_TX total=(\d+)", line)
+            if m:
+                v = int(m.group(1))
+                if v > r.attacker_packets_sent:
+                    r.attacker_packets_sent = v
 
             # BR_METRICS  (cumulative, keep the last)
             m = re.search(r"BR_METRICS rx=(\d+) anomalous=(\d+)", line)
@@ -225,6 +250,23 @@ def parse_log(path: Path, scenario: str, condition: str) -> RunResult:
     if r.first_reactive_s is not None and r.first_detection_s is not None:
         r.reaction_latency_s = max(0.0, r.first_reactive_s - r.first_detection_s)
 
+    # Attacker perspective
+    # external_br_rx = BR_RX minus the expected legitimate sensor baseline.  This
+    # is an upper bound on attacker packets that actually reached the BR (some
+    # legitimate sensors may have been silenced, so a few of those 5,220 may be
+    # missing -- this method counts those as "attacker" packets, but the bias is
+    # at most a few hundred and does not change the qualitative comparison).
+    if r.br_rx_total > 0:
+        r.external_br_rx = max(0, r.br_rx_total - EXPECTED_SENDS)
+    if r.attacker_packets_sent > 0 and r.external_br_rx is not None:
+        r.attacker_delivery_rate = r.external_br_rx / r.attacker_packets_sent
+
+    # Useful window: from end of attacker warm-up to the first reactive cycle.
+    # This is how long the attacker had to act before MTD started mutating.
+    if r.first_reactive_s is not None and r.attacker_start_s is not None:
+        warmup_end = r.attacker_start_s + 45
+        r.attacker_useful_window_s = max(0.0, r.first_reactive_s - warmup_end)
+
     r.br_energy_mj = energy_mj(
         r.br_cpu_ticks, r.br_lpm_ticks, r.br_tx_ticks, r.br_rx_ticks
     )
@@ -268,7 +310,10 @@ COLS = [
     ("ratelim",             "rate_limit_drops",    "{:>7}"),
     ("PDR",                 "pdr",                 "{:>6}"),
     ("det_lat_s",           "detection_latency_s", "{:>9}"),
-    ("rxn_lat_s",           "reaction_latency_s",  "{:>9}"),
+    ("atk_sent",            "attacker_packets_sent", "{:>8}"),
+    ("ext_rx",              "external_br_rx",      "{:>7}"),
+    ("deliv",               "attacker_delivery_rate", "{:>6}"),
+    ("usefulW_s",           "attacker_useful_window_s", "{:>9}"),
     ("BR_E_mJ",             "br_energy_mj",        "{:>9}"),
     ("Sens_E_mJ",           "sensor_energy_mj_mean","{:>9}"),
 ]
@@ -279,7 +324,7 @@ def fmt_cell(r: RunResult, attr: Optional[str], spec: str) -> str:
         return spec.format(f"{r.dominant_0}/{r.dominant_1}/{r.dominant_2}")
     v = getattr(r, attr)
     if isinstance(v, float):
-        if attr == "pdr":
+        if attr in ("pdr", "attacker_delivery_rate"):
             return spec.format(f"{v:.3f}")
         return spec.format(f"{v:.2f}")
     if v is None:
@@ -307,9 +352,9 @@ def main() -> int:
     project_dir = Path(__file__).resolve().parent.parent
 
     log_set = [
-        ("scan",     "mtd",   project_dir / "mt_attack_scan_sky.txt"),
-        ("sinkhole", "mtd",   project_dir / "mt_attack_sinkhole_sky.txt"),
-        ("flood",    "mtd",   project_dir / "mt_attack_flood_sky.txt"),
+        ("scan",     "mtd",   project_dir / "mtd_attack_scan_sky.txt"),
+        ("sinkhole", "mtd",   project_dir / "mtd_attack_sinkhole_sky.txt"),
+        ("flood",    "mtd",   project_dir / "mtd_attack_flood_sky.txt"),
         ("scan",     "nomtd", project_dir / "nomtd_scan_sky.txt"),
         ("sinkhole", "nomtd", project_dir / "nomtd_sinkhole_sky.txt"),
         ("flood",    "nomtd", project_dir / "nomtd_flood_sky.txt"),
