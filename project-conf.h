@@ -84,8 +84,16 @@
  * seconds to migrate; suppress the watchdog for that long so the
  * legitimate address migration is not mis-flagged as a sinkhole.
  * Must be SHORTER than the shuffle interval, otherwise the watchdog
- * is permanently muted (bug observed in early evaluation runs). */
-#define MTD_SILENCE_GRACE_S      20
+ * is permanently muted (bug observed in early evaluation runs).
+ *
+ * Lowered from 20 s to 10 s after the sinkhole evaluation showed that
+ * under a sustained STALE_PORT-dominated regime the reactive cycles
+ * (cooldown 60 s) keep resetting the grace just before each 15 s
+ * watchdog poll, starving the CONN_FAILURE branch.  Empirical sensor
+ * address migration completes in 3-5 s, so a 10 s grace still safely
+ * covers the legitimate migration window while letting the watchdog
+ * fire between successive reactive cycles. */
+#define MTD_SILENCE_GRACE_S      10
 #define MTD_SILENCE_GRACE        (MTD_SILENCE_GRACE_S * CLOCK_SECOND)
 
 /* Port hopping range: random port in [BASE, BASE + RANGE) */
