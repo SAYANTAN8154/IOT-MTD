@@ -19,8 +19,8 @@
       <description>BorderROuter</description>
       <source>[CONFIG_DIR]/border-router.c</source>
       <commands>$(MAKE) -j$(CPUS) border-router.sky TARGET=sky</commands>
+      <firmware>[CONFIG_DIR]/build/sky/border-router.sky</firmware>
       <moteinterface>org.contikios.cooja.interfaces.Position</moteinterface>
-      <moteinterface>org.contikios.cooja.interfaces.RimeAddress</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.IPAddress</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.Mote2MoteRelations</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.MoteAttributes</moteinterface>
@@ -31,10 +31,9 @@
       <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyCoffeeFilesystem</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.Msp802154Radio</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspDefaultSerial</moteinterface>
-      <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyLED</moteinterface>
+      <moteinterface>org.contikios.cooja.mspmote.interfaces.MspLED</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspDebugOutput</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyTemperature</moteinterface>
-      <firmware EXPORT="discard">[CONFIG_DIR]/build/sky/border-router.sky</firmware>
       <mote>
         <interface_config>
           org.contikios.cooja.interfaces.Position
@@ -51,8 +50,8 @@
       <description>RPLRouter</description>
       <source>[CONFIG_DIR]/sensor-node.c</source>
       <commands>$(MAKE) -j$(CPUS) sensor-node.sky TARGET=sky</commands>
+      <firmware>[CONFIG_DIR]/build/sky/sensor-node.sky</firmware>
       <moteinterface>org.contikios.cooja.interfaces.Position</moteinterface>
-      <moteinterface>org.contikios.cooja.interfaces.RimeAddress</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.IPAddress</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.Mote2MoteRelations</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.MoteAttributes</moteinterface>
@@ -63,10 +62,9 @@
       <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyCoffeeFilesystem</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.Msp802154Radio</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspDefaultSerial</moteinterface>
-      <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyLED</moteinterface>
+      <moteinterface>org.contikios.cooja.mspmote.interfaces.MspLED</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspDebugOutput</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyTemperature</moteinterface>
-      <firmware EXPORT="discard">[CONFIG_DIR]/build/sky/sensor-node.sky</firmware>
       <mote>
         <interface_config>
           org.contikios.cooja.interfaces.Position
@@ -113,8 +111,8 @@
       <description>SensorNode</description>
       <source>[CONFIG_DIR]/sensor-node.c</source>
       <commands>$(MAKE) -j$(CPUS) sensor-node.sky TARGET=sky</commands>
+      <firmware>[CONFIG_DIR]/build/sky/sensor-node.sky</firmware>
       <moteinterface>org.contikios.cooja.interfaces.Position</moteinterface>
-      <moteinterface>org.contikios.cooja.interfaces.RimeAddress</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.IPAddress</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.Mote2MoteRelations</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.MoteAttributes</moteinterface>
@@ -125,10 +123,9 @@
       <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyCoffeeFilesystem</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.Msp802154Radio</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspDefaultSerial</moteinterface>
-      <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyLED</moteinterface>
+      <moteinterface>org.contikios.cooja.mspmote.interfaces.MspLED</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspDebugOutput</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyTemperature</moteinterface>
-      <firmware EXPORT="discard">[CONFIG_DIR]/build/sky/sensor-node.sky</firmware>
       <mote>
         <interface_config>
           org.contikios.cooja.interfaces.Position
@@ -385,8 +382,8 @@
       <description>AttackerNode</description>
       <source>[CONFIG_DIR]/attacker-scan.c</source>
       <commands>$(MAKE) -j$(CPUS) attacker-scan.sky TARGET=sky</commands>
+      <firmware>[CONFIG_DIR]/build/sky/attacker-scan.sky</firmware>
       <moteinterface>org.contikios.cooja.interfaces.Position</moteinterface>
-      <moteinterface>org.contikios.cooja.interfaces.RimeAddress</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.IPAddress</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.Mote2MoteRelations</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.MoteAttributes</moteinterface>
@@ -397,14 +394,13 @@
       <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyCoffeeFilesystem</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.Msp802154Radio</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspDefaultSerial</moteinterface>
-      <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyLED</moteinterface>
+      <moteinterface>org.contikios.cooja.mspmote.interfaces.MspLED</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspDebugOutput</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyTemperature</moteinterface>
-      <firmware EXPORT="discard">[CONFIG_DIR]/build/sky/attacker-scan.sky</firmware>
       <mote>
         <interface_config>
           org.contikios.cooja.interfaces.Position
-          <pos x="39.949339627477386" y="59.69018800648831" />
+          <pos x="39.686481793251836" y="92.50032214450789" />
         </interface_config>
         <interface_config>
           org.contikios.cooja.mspmote.interfaces.MspMoteID

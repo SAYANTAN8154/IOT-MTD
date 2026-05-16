@@ -296,8 +296,43 @@ broadcast_addr_shuffle(void)
    * re-registers under its new address.  Suppress the silence watchdog
    * until the MTD_SILENCE_TIMEOUT window has passed so we don't mis-flag
    * the address migration as a sinkhole.
+   *
+   * Two-part fix for the silence-watchdog starvation observed under a
+   * sustained STALE_PORT regime in the sinkhole evaluation:
+   *
+   *   (1) Drain any silence already accumulated BEFORE the grace masks
+   *       the watchdog.  Sensors that fell silent before this shuffle
+   *       fired must still produce CONN_FAILURE -- otherwise repeated
+   *       STALE_PORT-driven shuffles would permanently hide them.
+   *
+   *   (2) Do NOT extend the grace window if it is already active.  The
+   *       grace covers the legitimate sensor-side address migration,
+   *       which is a one-shot event; back-to-back shuffles within an
+   *       active grace must not push the unmute time further into the
+   *       future, otherwise the watchdog never gets a clean window.
    */
-  silence_grace_until = clock_time() + MTD_SILENCE_GRACE;
+  {
+    clock_time_t now = clock_time();
+    uint8_t      i;
+    uint8_t      valid = (sensor_count < MTD_MAX_SENSORS) ? sensor_count
+                                                          : MTD_MAX_SENSORS;
+    /* (1) Pre-shuffle silence drain.  Same predicate as the watchdog
+     *     but stripped of address logging to fit Sky flash. */
+    for(i = 0; i < valid; i++) {
+      if(sensor_silence_flagged[i] || sensor_last_seen[i] == 0) {
+        continue;
+      }
+      if((now - sensor_last_seen[i]) >= MTD_SILENCE_TIMEOUT) {
+        LOG_WARN("SILENCE drain #%u -- CONN_FAILURE\n", i);
+        sensor_silence_flagged[i] = 1;
+        mtd_report_anomaly_typed(MTD_ANOMALY_CONN_FAILURE);
+      }
+    }
+    /* (2) Set grace only if not already active. */
+    if(silence_grace_until == 0 || now >= silence_grace_until) {
+      silence_grace_until = now + MTD_SILENCE_GRACE;
+    }
+  }
 }
 
 /*---------------------------------------------------------------------------*/
