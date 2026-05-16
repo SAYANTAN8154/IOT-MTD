@@ -96,6 +96,30 @@ class RunResult:
     attacker_useful_window_s:   Optional[float] = None # time from end of warm-up to
                                                        # first reactive cycle
 
+    # Per-source counters from BR_SRC_METRICS (separate legit vs attacker traffic)
+    legit_rx_total:             int = 0
+    legit_anom_total:           int = 0
+    att_rx_total:               int = 0
+    att_anom_total:             int = 0
+    false_positive_rate:        Optional[float] = None  # legit_anom / legit_rx
+    scan_success_rate:          Optional[float] = None  # att_rx / atk_packets_sent
+
+    # End-to-end latency from BR_LATENCY (legitimate sensor packets only)
+    latency_samples:            int = 0
+    latency_mean_ms:            Optional[float] = None
+    latency_max_ms:             Optional[int] = None
+
+    # Reconvergence: per-reactive-cycle time for BR RX rate to return to
+    # its pre-cycle moving average.  Computed in post-processing from
+    # per-packet RX log timestamps; reported here as the mean over all
+    # reactive cycles in the run.
+    reconvergence_mean_s:       Optional[float] = None
+    reconvergence_samples:      int = 0
+
+    # Internal: list of RX timestamps (for reconvergence calc)
+    rx_event_ts:                List[float] = field(default_factory=list)
+    reactive_cycle_ts:          List[float] = field(default_factory=list)
+
     # Energest at end of run
     br_cpu_ticks:       int = 0
     br_lpm_ticks:       int = 0
@@ -156,6 +180,7 @@ def parse_log(path: Path, scenario: str, condition: str) -> RunResult:
                 r.proactive_hops += 1
             if "MTD Reactive Cycle" in line:
                 r.reactive_cycles += 1
+                r.reactive_cycle_ts.append(ts)
                 if r.first_reactive_s is None:
                     r.first_reactive_s = ts
             if "cooldown active" in line:
@@ -204,6 +229,30 @@ def parse_log(path: Path, scenario: str, condition: str) -> RunResult:
                 v = int(m.group(1))
                 if v > r.attacker_packets_sent:
                     r.attacker_packets_sent = v
+
+            # Per-source counters (cumulative, keep the last)
+            m = re.search(
+                r"BR_SRC_METRICS legit_rx=(\d+) legit_anom=(\d+) att_rx=(\d+) att_anom=(\d+)",
+                line)
+            if m:
+                r.legit_rx_total   = int(m.group(1))
+                r.legit_anom_total = int(m.group(2))
+                r.att_rx_total     = int(m.group(3))
+                r.att_anom_total   = int(m.group(4))
+
+            # Latency aggregates (cumulative, keep the last)
+            m = re.search(r"BR_LATENCY samples=(\d+) mean_ms=(\d+) max_ms=(\d+)", line)
+            if m:
+                r.latency_samples = int(m.group(1))
+                r.latency_mean_ms = float(m.group(2))
+                r.latency_max_ms  = int(m.group(3))
+
+            # Per-packet RX timestamps for reconvergence calc.  The
+            # "[INFO: BorderRouter] RX [N]" line fires for every received
+            # packet (legitimate or attacker).  We record the time only;
+            # the actual reconvergence post-processing happens after the loop.
+            if "[INFO: BorderRouter] RX [" in line:
+                r.rx_event_ts.append(ts)
 
             # BR_METRICS  (cumulative, keep the last)
             m = re.search(r"BR_METRICS rx=(\d+) anomalous=(\d+)", line)
@@ -267,6 +316,51 @@ def parse_log(path: Path, scenario: str, condition: str) -> RunResult:
         warmup_end = r.attacker_start_s + 45
         r.attacker_useful_window_s = max(0.0, r.first_reactive_s - warmup_end)
 
+    # False-positive rate: fraction of legitimate-sender packets the BR
+    # mistakenly flagged as anomalous (caused by sensors falling behind
+    # on a port hop after a reactive shuffle).
+    if r.legit_rx_total > 0:
+        r.false_positive_rate = r.legit_anom_total / r.legit_rx_total
+
+    # Scan success rate: fraction of attacker-injected packets that
+    # reached the BR.  Strictly speaking this is "ingestion rate";
+    # for the scan scenario it corresponds to probes that found a
+    # still-valid target.
+    if r.attacker_packets_sent > 0:
+        r.scan_success_rate = r.att_rx_total / r.attacker_packets_sent
+
+    # Reconvergence time after each reactive cycle.
+    # For each reactive cycle at time T:
+    #   pre_rate  = packets/sec in [T-60s, T]
+    #   post_window starts at T; slide forward in 5s buckets; reconvergence
+    #     is reached when bucket rate >= 0.9 * pre_rate (or 0.5 pkt/s as floor).
+    #   Cap at 60 s post-cycle; if not recovered, record 60 s (the cap).
+    if r.reactive_cycle_ts and r.rx_event_ts:
+        rx = sorted(r.rx_event_ts)
+        recs: List[float] = []
+        for tc in r.reactive_cycle_ts:
+            pre  = [t for t in rx if tc - 60 <= t < tc]
+            pre_rate = len(pre) / 60.0
+            if pre_rate < 0.1:
+                continue   # nothing to converge to
+            target = max(0.5, 0.9 * pre_rate)
+            # walk forward in 5s buckets up to 60s post-cycle
+            recovered = None
+            for k in range(1, 13):     # 5, 10, ..., 60 s
+                end = tc + k * 5
+                bucket = [t for t in rx if tc < t <= end]
+                if len(bucket) / (k * 5.0) >= target:
+                    recovered = k * 5
+                    break
+            recs.append(recovered if recovered is not None else 60.0)
+        if recs:
+            r.reconvergence_samples = len(recs)
+            r.reconvergence_mean_s  = sum(recs) / len(recs)
+
+    # Drop the bulky internal lists from the dataclass before serialisation.
+    r.rx_event_ts.clear()
+    r.reactive_cycle_ts.clear()
+
     r.br_energy_mj = energy_mj(
         r.br_cpu_ticks, r.br_lpm_ticks, r.br_tx_ticks, r.br_rx_ticks
     )
@@ -316,6 +410,10 @@ COLS = [
     ("usefulW_s",           "attacker_useful_window_s", "{:>9}"),
     ("BR_E_mJ",             "br_energy_mj",        "{:>9}"),
     ("Sens_E_mJ",           "sensor_energy_mj_mean","{:>9}"),
+    ("FPR",                 "false_positive_rate", "{:>6}"),
+    ("scanSR",              "scan_success_rate",   "{:>6}"),
+    ("lat_ms",              "latency_mean_ms",     "{:>7}"),
+    ("reconv_s",            "reconvergence_mean_s","{:>8}"),
 ]
 
 
@@ -324,8 +422,11 @@ def fmt_cell(r: RunResult, attr: Optional[str], spec: str) -> str:
         return spec.format(f"{r.dominant_0}/{r.dominant_1}/{r.dominant_2}")
     v = getattr(r, attr)
     if isinstance(v, float):
-        if attr in ("pdr", "attacker_delivery_rate"):
+        if attr in ("pdr", "attacker_delivery_rate",
+                    "false_positive_rate", "scan_success_rate"):
             return spec.format(f"{v:.3f}")
+        if attr == "latency_mean_ms":
+            return spec.format(f"{v:.1f}")
         return spec.format(f"{v:.2f}")
     if v is None:
         return spec.format("-")

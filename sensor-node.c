@@ -197,14 +197,16 @@ PROCESS_THREAD(sensor_node_process, ev, data)
          NETSTACK_ROUTING.get_root_ipaddr(&dest_addr)) {
 
         /*
-         * Payload format: "seq=<n>,port=<p>"
-         * The port field is the application-layer MTD identity token.
-         * The border router compares it against mtd_get_current_port()
-         * to detect stale-port / replay traffic.
+         * Payload format: "seq=<n>,port=<p>,t=<ms>"
+         *   port  -- application-layer MTD identity token (BR checks it)
+         *   t     -- TX timestamp in clock_time() ticks at send moment;
+         *            the BR diffs it against its own clock_time() on
+         *            receive to compute per-packet end-to-end latency.
          */
-        char buf[40];
-        int len = snprintf(buf, sizeof(buf), "seq=%lu,port=%u",
-                           (unsigned long)seq_num++, active_port);
+        char buf[48];
+        unsigned long t_tx = (unsigned long)clock_time();
+        int len = snprintf(buf, sizeof(buf), "seq=%lu,port=%u,t=%lu",
+                           (unsigned long)seq_num++, active_port, t_tx);
 
         simple_udp_sendto(&udp_conn, buf, len, &dest_addr);
         LOG_INFO("TX seq=%lu port=%u to ", (unsigned long)(seq_num - 1), active_port);
