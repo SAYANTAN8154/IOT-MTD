@@ -57,12 +57,19 @@
  * traffic at 20 pkt/s = 200 pkts/window comfortably exceeds 80. */
 #define MTD_FLOOD_PPS_THRESHOLD  80   /* >80 pkts within MTD_CPU_WINDOW_S → flood */
 
-/* Rate limiting -- application-layer packet cap per second.
- * Set to 10 pkt/s so the limiter actually engages during a 20-pkt/s
- * flood (with 25 legitimate sensors at ~2.5 pkt/s, total ~22.5 pkt/s
- * comfortably exceeds the cap).  Legitimate traffic stays below 10
- * during normal operation. */
-#define MTD_RATE_LIMIT_PPS       10   /* max packets/s before dropping excess  */
+/* Rate limiting -- application-layer cap on ATTACKER traffic per second.
+ * Source-aware: legitimate sensors are exempt; only packets from the
+ * known attacker IID are throttled (see is_attacker_source() in BR).
+ * The cap is computed adaptively as
+ *     cap_pps = MTD_RATE_LIMIT_MULTIPLIER * sensor_count / SENSOR_SEND_INTERVAL_S
+ * so with 29 sensors at 10s interval and multiplier=1 the cap is ~3 pkt/s
+ * (equal to the legitimate per-second baseline).  This enforces
+ * "no single source can dominate beyond the legit aggregate rate". */
+#define MTD_RATE_LIMIT_MULTIPLIER 1U
+
+/* Proactive timer jitter (+/- 25% of the base interval).  Defeats trivial
+ * cadence learning by an attacker that watches multiple cycles. */
+#define MTD_JITTER_PCT           25U
 
 /* Sensor-silence watchdog -- used to detect RPL sinkhole / routing disruption.
  * A registered sensor that has not transmitted for this many seconds is

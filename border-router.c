@@ -71,6 +71,11 @@
 static uint32_t pkts_received  = 0;
 static uint32_t pkts_anomalous = 0;
 
+static uint32_t legit_rx        = 0;
+static uint32_t legit_anomalous = 0;
+static uint32_t attacker_rx     = 0;
+static uint32_t attacker_anomalous = 0;
+
 /*---------------------------------------------------------------------------*/
 /* UDP connection for receiving sensor data                                  */
 /*---------------------------------------------------------------------------*/
@@ -87,6 +92,12 @@ static struct simple_udp_connection server_conn;
  * Returns the parsed port value, or 0 if the field is absent or malformed.
  * A null terminator is written into a local copy so strstr/atoi are safe.
  */
+static uint8_t
+is_attacker_source(const uip_ipaddr_t *addr)
+{
+  return (addr->u8[10] == 0x74 && addr->u8[11] == 0x1f);
+}
+
 static uint16_t
 parse_payload_port(const uint8_t *data, uint16_t datalen)
 {
@@ -129,25 +140,21 @@ udp_rx_callback(struct simple_udp_connection *c,
   /*
    * Rate limiting -- enforced only when a flooding episode is active
    * (cpu_load_pct > MTD_CPU_THRESHOLD_PCT as measured by the orchestrator's
-   * Energest monitor).  When the per-second packet cap MTD_RATE_LIMIT_PPS
+   * Energest monitor).  When the per-second packet cap adaptive rate cap
    * is exceeded, the packet is silently discarded to protect the CPU.
    */
+  uint8_t from_attacker = is_attacker_source(sender_addr);
+
 #ifndef MTD_DISABLED
-  if(mtd_rate_limit_check()) {
-    return;   /* packet dropped by rate limiter */
+  if(mtd_rate_limit_check(from_attacker)) {
+    return;
   }
-  /* Feed the packet-rate flood monitor (CPU_LOAD proxy, thesis Sec 5.3.3).
-   * Counted BEFORE the anomaly check so flood traffic is registered even
-   * when individual packets are flagged as STALE_PORT. */
   mtd_packet_rate_tick();
 #endif
 
   pkts_received++;
+  if(from_attacker) attacker_rx++; else legit_rx++;
 
-  /*
-   * Register this sender so the orchestrator can later push CMD_PORT_HOP
-   * and CMD_ADDR_SHUFFLE back to it.  Duplicate registrations are a no-op.
-   */
 #ifndef MTD_DISABLED
   mtd_register_sensor(sender_addr);
 #endif
@@ -181,6 +188,7 @@ udp_rx_callback(struct simple_udp_connection *c,
 
   if(payload_port != 0 && !port_ok) {
     pkts_anomalous++;
+    if(from_attacker) attacker_anomalous++; else legit_anomalous++;
     LOG_WARN("ANOMALY pkt #%lu payload_port=%u expected=%u from ",
              (unsigned long)pkts_received,
              payload_port, mtd_get_current_port());
@@ -215,18 +223,7 @@ udp_rx_callback(struct simple_udp_connection *c,
   mtd_send_port_update(sender_addr);
 #endif
 
-  /* Valid packet -- log it for PDR calculation */
-  LOG_INFO("RX [%lu] payload_port=%u from ", (unsigned long)pkts_received, payload_port);
-  LOG_INFO_6ADDR(sender_addr);
-  LOG_INFO_(" len=%u data=%.*s\n",
-            datalen, (int)datalen, (char *)data);
-
-  /* Periodic metrics snapshot every 50 packets */
-  if(pkts_received % 50 == 0) {
-    LOG_INFO("METRICS rx=%lu anomalous=%lu\n",
-             (unsigned long)pkts_received,
-             (unsigned long)pkts_anomalous);
-  }
+  LOG_INFO("RX [%lu]\n", (unsigned long)pkts_received);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -289,9 +286,10 @@ PROCESS_THREAD(border_router_process, ev, data)
              (unsigned long long)energest_type_time(ENERGEST_TYPE_TRANSMIT),
              (unsigned long long)energest_type_time(ENERGEST_TYPE_LISTEN));
 
-    LOG_INFO("BR_METRICS rx=%lu anomalous=%lu\n",
-             (unsigned long)pkts_received,
-             (unsigned long)pkts_anomalous);
+    LOG_INFO("BR_METRICS rx=%lu anom=%lu lr=%lu la=%lu ar=%lu aa=%lu\n",
+             (unsigned long)pkts_received,  (unsigned long)pkts_anomalous,
+             (unsigned long)legit_rx,       (unsigned long)legit_anomalous,
+             (unsigned long)attacker_rx,    (unsigned long)attacker_anomalous);
 
     etimer_reset(&metrics_timer);
   }

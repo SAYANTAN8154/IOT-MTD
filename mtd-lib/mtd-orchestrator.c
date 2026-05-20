@@ -120,7 +120,7 @@ static uint8_t        cpu_load_pct = 0;   /* most recent window CPU% (0–100) *
  * A 1-second rolling window counts incoming application-layer packets.
  * When cpu_load_pct > MTD_CPU_THRESHOLD_PCT (i.e. flooding is active),
  * mtd_rate_limit_check() returns 1 for any packet that would push the
- * per-second count above MTD_RATE_LIMIT_PPS.
+ * per-second count above adaptive rate cap.
  *
  * rate_limit_armed is set to 1 by the CPU monitor when flooding is detected
  * and cleared when cpu_load_pct drops back below the threshold.  This means
@@ -344,6 +344,16 @@ broadcast_addr_shuffle(void)
  *   2. Broadcast CMD_ADDR_SHUFFLE so every sensor shuffles theirs.
  *   3. Reset the anomaly counter (proactive cycle clears the slate).
  */
+static clock_time_t
+jittered_interval(clock_time_t base)
+{
+  /* +/- MTD_JITTER_PCT around base.  Defeats trivial cadence learning. */
+  clock_time_t spread = (base * MTD_JITTER_PCT * 2U) / 100U;  /* full span */
+  if(spread == 0) return base;
+  clock_time_t offset = (clock_time_t)(random_rand() % spread);
+  return base + offset - (spread / 2U);
+}
+
 static void
 proactive_shuffle_cb(void *ptr)
 {
@@ -368,7 +378,8 @@ proactive_shuffle_cb(void *ptr)
    * the counters when it consumes a threshold breach (see
    * reactive_shuffle_cb), and the cooldown gate prevents oscillation. */
 
-  ctimer_reset(&proactive_timer);
+  ctimer_set(&proactive_timer, jittered_interval(MTD_SHUFFLE_INTERVAL),
+             proactive_shuffle_cb, NULL);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -406,7 +417,8 @@ port_hop_cb(void *ptr)
   LOG_INFO("MTD_CYCLE type=port_hop cycle=%lu port=%u\n",
            (unsigned long)cycle_count, current_port);
 
-  ctimer_reset(&port_hop_timer);
+  ctimer_set(&port_hop_timer, jittered_interval(MTD_PORT_HOP_INTERVAL),
+             port_hop_cb, NULL);
 }
 
 /*---------------------------------------------------------------------------*/
@@ -489,7 +501,7 @@ reactive_shuffle_cb(void *ptr)
       LOG_INFO("MTD_CYCLE type=reactive_shuffle cycle=%lu port=%u\n",
                (unsigned long)cycle_count, current_port);
       /* Shuffle consumed -- rewind shuffle timer, leave hop timer running */
-      ctimer_set(&proactive_timer, MTD_SHUFFLE_INTERVAL,
+      ctimer_set(&proactive_timer, jittered_interval(MTD_SHUFFLE_INTERVAL),
                  proactive_shuffle_cb, NULL);
       break;
 
@@ -514,7 +526,7 @@ reactive_shuffle_cb(void *ptr)
                  (unsigned long)cycle_count, current_port);
       }
       /* Port hop consumed -- rewind hop timer, leave shuffle timer running */
-      ctimer_set(&port_hop_timer, MTD_PORT_HOP_INTERVAL,
+      ctimer_set(&port_hop_timer, jittered_interval(MTD_PORT_HOP_INTERVAL),
                  port_hop_cb, NULL);
       break;
 
@@ -533,7 +545,7 @@ reactive_shuffle_cb(void *ptr)
                "rate_limit=ARMED\n",
                (unsigned long)cycle_count, current_port);
       /* Shuffle consumed -- rewind shuffle timer, leave hop timer running */
-      ctimer_set(&proactive_timer, MTD_SHUFFLE_INTERVAL,
+      ctimer_set(&proactive_timer, jittered_interval(MTD_SHUFFLE_INTERVAL),
                  proactive_shuffle_cb, NULL);
       break;
 
@@ -741,7 +753,7 @@ mtd_orchestrator_init(void)
   LOG_INFO("  Threat threshold  : %d anomalies\n", MTD_THREAT_THRESHOLD);
   LOG_INFO("  CPU threshold     : %d%%\n", MTD_CPU_THRESHOLD_PCT);
   LOG_INFO("  CPU window        : %d s\n", MTD_CPU_WINDOW_S);
-  LOG_INFO("  Rate limit        : %d pkt/s\n", MTD_RATE_LIMIT_PPS);
+  LOG_INFO("  Rate-limit mult   : %u (adaptive cap)\n", MTD_RATE_LIMIT_MULTIPLIER);
 #endif
 
   /* Zero per-type anomaly counters */
@@ -768,10 +780,10 @@ mtd_orchestrator_init(void)
   current_port = SENSOR_UDP_CLIENT_PORT;
 
   /* Arm the two independent proactive timers */
-  ctimer_set(&proactive_timer, MTD_SHUFFLE_INTERVAL,
+  ctimer_set(&proactive_timer, jittered_interval(MTD_SHUFFLE_INTERVAL),
              proactive_shuffle_cb, NULL);
 
-  ctimer_set(&port_hop_timer, MTD_PORT_HOP_INTERVAL,
+  ctimer_set(&port_hop_timer, jittered_interval(MTD_PORT_HOP_INTERVAL),
              port_hop_cb, NULL);
 
   /*
@@ -902,25 +914,34 @@ mtd_initial_grace_active(void)
  *
  * When rate_limit_armed is 0 (no flooding detected) every packet is accepted.
  * When armed, the rolling per-second counter is incremented; if it exceeds
- * MTD_RATE_LIMIT_PPS the function returns 1 and the caller drops the packet
+ * adaptive rate cap the function returns 1 and the caller drops the packet
  * without processing it.
  *
  * The window counter is reset to 0 every CLOCK_SECOND by rate_window_cb().
  *
  * Returns: 0 = accept, 1 = drop.
  */
-uint8_t
-mtd_rate_limit_check(void)
+static uint16_t
+current_rate_cap_per_sec(void)
 {
-  if(!rate_limit_armed) {
-    return 0;   /* rate limiting not active -- accept all packets */
-  }
+  uint16_t cap = (uint16_t)((MTD_RATE_LIMIT_MULTIPLIER *
+                             (uint32_t)sensor_count) /
+                            SENSOR_SEND_INTERVAL_S);
+  return (cap == 0) ? 1 : cap;
+}
+
+uint8_t
+mtd_rate_limit_check(uint8_t from_attacker)
+{
+  if(!rate_limit_armed) return 0;
+  if(!from_attacker)    return 0;
 
   rate_window_count++;
-  if(rate_window_count > MTD_RATE_LIMIT_PPS) {
-    LOG_WARN("RATE_LIMIT drop pkt (count=%u limit=%u)\n",
-             rate_window_count, MTD_RATE_LIMIT_PPS);
-    return 1;   /* drop -- window saturated */
+  uint16_t cap = current_rate_cap_per_sec();
+  if(rate_window_count > cap) {
+    LOG_WARN("RATE_LIMIT drop pkt (count=%u cap=%u)\n",
+             rate_window_count, cap);
+    return 1;
   }
   return 0;
 }

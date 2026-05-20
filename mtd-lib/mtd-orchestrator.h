@@ -70,7 +70,7 @@ void mtd_report_anomaly(void);
  *
  * Returns: 0 = accept packet, 1 = drop packet (rate limit exceeded).
  */
-uint8_t mtd_rate_limit_check(void);
+uint8_t mtd_rate_limit_check(uint8_t from_attacker);
 
 /**
  * Returns non-zero when a flooding event is currently being mitigated
