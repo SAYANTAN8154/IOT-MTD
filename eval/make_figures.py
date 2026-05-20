@@ -282,7 +282,7 @@ def fig_energy_breakdown(data: Dict, out_dir: Path):
 def fig_anomaly_timeline(data: Dict, out_dir: Path):
     branch_color  = {0: "#1f4e79", 1: "#ed7d31", 2: "#c00000"}
     branch_marker = {0: "v",       1: "s",       2: "D"}
-    branch_label  = {0: "shuffle", 1: "port hop", 2: "shuffle + rate limit"}
+    branch_label  = {0: "shuffle", 1: "token rotation", 2: "shuffle + rate limit"}
 
     fig, ax = plt.subplots(figsize=(11, 3.6))
 
@@ -310,7 +310,7 @@ def fig_anomaly_timeline(data: Dict, out_dir: Path):
         d0 = sum(1 for _, ty in d["reactive_cycles"] if ty == 0)
         d1 = sum(1 for _, ty in d["reactive_cycles"] if ty == 1)
         d2 = sum(1 for _, ty in d["reactive_cycles"] if ty == 2)
-        tally = f"  {d0} shuf  +  {d1} hop  +  {d2} comp"
+        tally = f"  {d0} shuf  +  {d1} rot  +  {d2} comp"
         ax.text(30.3, y, tally, va="center", ha="left", fontsize=9,
                 color="#333333")
 
@@ -366,7 +366,7 @@ def fig_branch_distribution(data: Dict, out_dir: Path):
     w = 0.55
     ax.bar(x, counts["d0"], w, color=COLOR_CPU, label="STALE_PORT → IPv6 shuffle")
     ax.bar(x, counts["d1"], w, bottom=counts["d0"], color=COLOR_TX,
-           label="CONN_FAILURE → port hop")
+           label="CONN_FAILURE → token rotation")
     bot2 = np.array(counts["d0"]) + np.array(counts["d1"])
     ax.bar(x, counts["d2"], w, bottom=bot2, color=COLOR_NOMTD,
            label="CPU_LOAD → shuffle + rate limit")
