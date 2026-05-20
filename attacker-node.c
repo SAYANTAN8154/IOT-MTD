@@ -86,8 +86,14 @@
 #if ATTACK_MODE == ATTACK_MODE_SCAN
   /* 10 pkt/s injected; ~5-7 pkt/s effective at BR after multi-hop.
    * Stays well above the STALE_PORT threshold of 5 per evaluation
-   * window without saturating the flood detector. */
-  #define ATTACK_SEND_MS         100
+   * window without saturating the flood detector.
+   *
+   * ATTACK_SEND_MS is #ifndef-guarded so the scan-slow / scan-fast
+   * wrapper files (attacker-scan-slow.c, attacker-scan-fast.c) can
+   * override the cadence for the attacker-speed sweep. */
+  #ifndef ATTACK_SEND_MS
+    #define ATTACK_SEND_MS       100
+  #endif
   #define ATTACK_LABEL           "SCAN"
 #elif ATTACK_MODE == ATTACK_MODE_SINKHOLE
   /* Broadcast storm -- no routing, cadence unchanged. */

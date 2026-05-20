@@ -1,5 +1,6 @@
 CONTIKI_PROJECT = sensor-node border-router border-router-nomtd \
-                  attacker-scan attacker-sinkhole attacker-flood
+                  attacker-scan attacker-sinkhole attacker-flood \
+                  attacker-scan-slow attacker-scan-fast
 
 all: $(CONTIKI_PROJECT)
 
@@ -17,9 +18,11 @@ CONTIKI = /home/stan/project/contiki-ng
 # three distinct .cooja binaries that Make tracks independently, so
 # switching scenarios never reuses a stale attacker object file.
 #
-#   attacker-scan.cooja      ATTACK_MODE=1  IPv6 scan      (Sec 5.3.1)
-#   attacker-sinkhole.cooja  ATTACK_MODE=2  RPL sinkhole   (Sec 5.3.2)
-#   attacker-flood.cooja     ATTACK_MODE=3  CoAP/UDP flood (Sec 5.3.3)
+#   attacker-scan.cooja        ATTACK_MODE=1  IPv6 scan, 10 pkt/s (Sec 5.3.1)
+#   attacker-sinkhole.cooja    ATTACK_MODE=2  RPL sinkhole        (Sec 5.3.2)
+#   attacker-flood.cooja       ATTACK_MODE=3  CoAP/UDP flood      (Sec 5.3.3)
+#   attacker-scan-slow.cooja   ATTACK_MODE=1  IPv6 scan, 2 pkt/s  (Sec 7.3.6 sweep)
+#   attacker-scan-fast.cooja   ATTACK_MODE=1  IPv6 scan, 50 pkt/s (Sec 7.3.6 sweep)
 #
 # The corresponding .csc files reference the right wrapper; no DEFINES=
 # argument is needed on the make command line.
