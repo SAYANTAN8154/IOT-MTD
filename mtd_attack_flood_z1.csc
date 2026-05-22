@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <simconf version="2023090101">
   <simulation>
-    <title>mtd_attack_scan_sky</title>
+    <title>mtd_attack_flood_z1</title>
     <randomseed>687681</randomseed>
     <motedelay_us>1000000</motedelay_us>
     <radiomedium>
@@ -15,25 +15,21 @@
       <logoutput>40000</logoutput>
     </events>
     <motetype>
-      org.contikios.cooja.mspmote.SkyMoteType
-      <description>BorderROuter</description>
+      org.contikios.cooja.mspmote.Z1MoteType
+      <description>BorderROuter (Z1)</description>
       <source>[CONFIG_DIR]/border-router.c</source>
-      <commands>$(MAKE) -j$(CPUS) border-router.sky TARGET=sky</commands>
-      <firmware>[CONFIG_DIR]/build/sky/border-router.sky</firmware>
+      <commands>$(MAKE) -j$(CPUS) border-router.z1 TARGET=z1</commands>
+      <firmware>[CONFIG_DIR]/build/z1/border-router.z1</firmware>
       <moteinterface>org.contikios.cooja.interfaces.Position</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.IPAddress</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.Mote2MoteRelations</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.MoteAttributes</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspClock</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspMoteID</moteinterface>
-      <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyButton</moteinterface>
-      <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyFlash</moteinterface>
-      <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyCoffeeFilesystem</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.Msp802154Radio</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspDefaultSerial</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspLED</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspDebugOutput</moteinterface>
-      <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyTemperature</moteinterface>
       <mote>
         <interface_config>
           org.contikios.cooja.interfaces.Position
@@ -380,9 +376,9 @@
     <motetype>
       org.contikios.cooja.mspmote.SkyMoteType
       <description>AttackerNode</description>
-      <source>[CONFIG_DIR]/attacker-scan.c</source>
-      <commands>$(MAKE) -j$(CPUS) attacker-scan.sky TARGET=sky</commands>
-      <firmware>[CONFIG_DIR]/build/sky/attacker-scan.sky</firmware>
+      <source>[CONFIG_DIR]/attacker-flood.c</source>
+      <commands>$(MAKE) -j$(CPUS) attacker-flood.sky TARGET=sky</commands>
+      <firmware>[CONFIG_DIR]/build/sky/attacker-flood.sky</firmware>
       <moteinterface>org.contikios.cooja.interfaces.Position</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.IPAddress</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.Mote2MoteRelations</moteinterface>
@@ -400,7 +396,7 @@
       <mote>
         <interface_config>
           org.contikios.cooja.interfaces.Position
-          <pos x="39.686481793251836" y="92.50032214450789" />
+          <pos x="39.686481793251836" y="92.34406926821765" />
         </interface_config>
         <interface_config>
           org.contikios.cooja.mspmote.interfaces.MspMoteID
@@ -474,11 +470,13 @@
   <plugin>
     org.contikios.cooja.plugins.Notes
     <plugin_config>
-      <notes>MTD-IoT evaluation scenario: IPv6 Address Scanning (thesis Sec 5.3.1) | MTD ENABLED
+      <notes>MTD-IoT evaluation scenario: CoAP/UDP Flooding (thesis Sec 5.3.3) | MTD ENABLED
 
-Attacker sends 10 UDP probes/s to the BR with a stale port= field.
-Expected MTD response: rapid STALE_PORT anomalies → reactive IPv6 IID shuffle.
-Primary metric: scan success rate (addresses hit before shuffle vs after).</notes>
+Attacker sends 20 UDP packets/s to the BR.
+BR packet-rate monitor (CPU_LOAD proxy for Cooja contikimote) raises
+MTD_ANOMALY_CPU_LOAD when the window count exceeds MTD_FLOOD_PPS_THRESHOLD.
+Expected MTD response: composite IPv6 shuffle + rate limit.
+Primary metric: CPU load reduction and per-window packet count after shuffle.</notes>
       <decorations>true</decorations>
     </plugin_config>
     <bounds x="400" y="0" height="160" width="3172" z="2" />

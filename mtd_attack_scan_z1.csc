@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <simconf version="2023090101">
   <simulation>
-    <title>mtd_attack_scan_sky</title>
+    <title>mtd_attack_scan_z1</title>
     <randomseed>687681</randomseed>
     <motedelay_us>1000000</motedelay_us>
     <radiomedium>
@@ -15,25 +15,21 @@
       <logoutput>40000</logoutput>
     </events>
     <motetype>
-      org.contikios.cooja.mspmote.SkyMoteType
-      <description>BorderROuter</description>
+      org.contikios.cooja.mspmote.Z1MoteType
+      <description>BorderROuter (Z1)</description>
       <source>[CONFIG_DIR]/border-router.c</source>
-      <commands>$(MAKE) -j$(CPUS) border-router.sky TARGET=sky</commands>
-      <firmware>[CONFIG_DIR]/build/sky/border-router.sky</firmware>
+      <commands>$(MAKE) -j$(CPUS) border-router.z1 TARGET=z1</commands>
+      <firmware>[CONFIG_DIR]/build/z1/border-router.z1</firmware>
       <moteinterface>org.contikios.cooja.interfaces.Position</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.IPAddress</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.Mote2MoteRelations</moteinterface>
       <moteinterface>org.contikios.cooja.interfaces.MoteAttributes</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspClock</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspMoteID</moteinterface>
-      <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyButton</moteinterface>
-      <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyFlash</moteinterface>
-      <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyCoffeeFilesystem</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.Msp802154Radio</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspDefaultSerial</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspLED</moteinterface>
       <moteinterface>org.contikios.cooja.mspmote.interfaces.MspDebugOutput</moteinterface>
-      <moteinterface>org.contikios.cooja.mspmote.interfaces.SkyTemperature</moteinterface>
       <mote>
         <interface_config>
           org.contikios.cooja.interfaces.Position

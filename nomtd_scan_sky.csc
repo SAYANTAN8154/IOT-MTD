@@ -2,7 +2,7 @@
 <simconf version="2023090101">
   <simulation>
     <title>mtd_nomtd_scan_sky</title>
-    <randomseed>123456</randomseed>
+    <randomseed>687681</randomseed>
     <motedelay_us>1000000</motedelay_us>
     <radiomedium>
       org.contikios.cooja.radiomediums.UDGM

@@ -203,4 +203,96 @@
 
 #endif /* CONTIKI_TARGET_SKY */
 
+/*---------------------------------------------------------------------------*/
+/* TARGET=z1 build: Zolertia Z1 (MSP430F2617) has 92 KB flash and 8 KB     */
+/* RAM.  Flash is comfortable (about 2x Sky), but RAM is actually 2 KB      */
+/* tighter than Sky's 10 KB.  We mirror the Sky size overrides so the BR    */
+/* fits in the 8 KB BSS budget; tighten further per-knob if a build       */
+/* overflows.  Same radio chip as Sky (CC2420), same MSPSim Energest path.  */
+/*---------------------------------------------------------------------------*/
+#ifdef CONTIKI_TARGET_Z1
+
+  /*-------------------------------------------------------------------------*/
+  /* Z1-specific MTD tuning.                                                  */
+  /*                                                                          */
+  /* Rationale: the Z1's MSP430F2617 clocks at 16 MHz vs Sky's MSP430F1611  */
+  /* at 8 MHz.  The faster CPU means the BR receive callback processes more  */
+  /* packets per second, which trips the packet-rate-proxy flood detector    */
+  /* more often.  An initial run with Sky-tuned defaults produced 17         */
+  /* composite (d=2) reactive cycles in 30 min vs Sky's 9, which drove       */
+  /* legit-anomaly count from 1176 -> 2853 (FPR 33% -> 70%) while attacker   */
+  /* delivery only fell from 72.3% -> 67.4%.                                  */
+  /*                                                                          */
+  /* The three knobs below slow the orchestrator's reactive cadence so       */
+  /* the trade-off between attacker suppression and legit FPR matches Sky    */
+  /* on the faster Z1 CPU.                                                    */
+  /*-------------------------------------------------------------------------*/
+
+  /* Lengthen reactive cooldown: 60s -> 120s.  Halves the maximum reactive  */
+  /* cycle rate so sensors get more time to re-register on each new token. */
+  #undef  MTD_COOLDOWN_S
+  #undef  MTD_COOLDOWN
+  #define MTD_COOLDOWN_S                120
+  #define MTD_COOLDOWN                  (MTD_COOLDOWN_S * CLOCK_SECOND)
+
+  /* Raise flood packet-rate threshold: 80 -> 120 packets per 10s window.  */
+  /* Real 30 pkt/s flood (300 packets/window) still trips comfortably;     */
+  /* legitimate aggregate (~3 pkt/s = 30 packets/window) stays well below. */
+  #undef  MTD_FLOOD_PPS_THRESHOLD
+  #define MTD_FLOOD_PPS_THRESHOLD       120
+
+  /* Raise stale-port threshold: 5 -> 8 events.  Affects only the d=0      */
+  /* (STALE_PORT) branch since severe types fire on 1 event.  Reduces      */
+  /* the reactive cycle rate under scan-style attacks.                    */
+  #undef  MTD_THREAT_THRESHOLD
+  #define MTD_THREAT_THRESHOLD          8
+
+  /* uIP buffer: same compact value as Sky -- plain UDP, no reassembly. */
+  #define UIP_CONF_BUFFER_SIZE          240
+
+  /* Neighbour and route tables: 30-node network, two hops max. */
+  #define NBR_TABLE_CONF_MAX_NEIGHBORS  8
+  #define UIP_CONF_MAX_ROUTES           8
+  #define QUEUEBUF_CONF_NUM             4
+
+  /* RPL features we don't need for evaluation. */
+  #define RPL_CONF_WITH_PROBING         0
+  #define RPL_CONF_WITH_DAO_ACK         0
+
+  /* IPv6 reassembly off -- never send beyond the uIP buffer. */
+  #define UIP_CONF_IPV6_REASSEMBLY      0
+
+  /* UDP only, no TCP. */
+  #define UIP_CONF_TCP                  0
+
+  /* Drop neighbour solicitation queueing. */
+  #define UIP_CONF_DS6_NBR_NBU          4
+
+  /* Smaller default router and prefix tables. */
+  #define UIP_CONF_DS6_DEFRT_NBU        1
+  #define UIP_CONF_DS6_PREFIX_NBU       1
+
+  /* Drop link-stats packet counters (debug only). */
+  #define LINK_STATS_CONF_PACKET_COUNTERS 0
+
+  /* Drop watchdog and stack-check helpers; not needed in simulation. */
+  #define WATCHDOG_CONF_ENABLE          0
+  #define STACK_CHECK_CONF_ENABLED      0
+
+  /* Silence Contiki-NG core module logging; structured log lines we
+   * actually parse come from our own modules with their own LOG_LEVEL. */
+  #undef  LOG_CONF_LEVEL_RPL
+  #undef  LOG_CONF_LEVEL_TCPIP
+  #undef  LOG_CONF_LEVEL_IPV6
+  #undef  LOG_CONF_LEVEL_6LOWPAN
+  #define LOG_CONF_LEVEL_RPL            LOG_LEVEL_NONE
+  #define LOG_CONF_LEVEL_TCPIP          LOG_LEVEL_NONE
+  #define LOG_CONF_LEVEL_IPV6           LOG_LEVEL_NONE
+  #define LOG_CONF_LEVEL_6LOWPAN        LOG_LEVEL_NONE
+  #define LOG_CONF_LEVEL_MAC            LOG_LEVEL_NONE
+  #define LOG_CONF_LEVEL_FRAMER         LOG_LEVEL_NONE
+  #define LOG_CONF_LEVEL_MAIN           LOG_LEVEL_NONE
+
+#endif /* CONTIKI_TARGET_Z1 */
+
 #endif /* PROJECT_CONF_H_ */

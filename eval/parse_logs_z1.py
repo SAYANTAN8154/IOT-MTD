@@ -584,12 +584,12 @@ def main() -> int:
     project_dir = Path(__file__).resolve().parent.parent
 
     log_set = [
-        ("scan",     "mtd",   project_dir / "mtd_attack_scan_sky_run1.txt"),
-        ("sinkhole", "mtd",   project_dir / "mtd_attack_sinkhole_sky_run1.txt"),
-        ("flood",    "mtd",   project_dir / "mtd_attack_flood_sky_run1.txt"),
-        ("scan",     "nomtd", project_dir / "nomtd_scan_sky_run1.txt"),
-        ("sinkhole", "nomtd", project_dir / "nomtd_sinkhole_sky_run1.txt"),
-        ("flood",    "nomtd", project_dir / "nomtd_flood_sky_run1.txt"),
+        ("scan",     "mtd",   project_dir / "mtd_attack_scan_z1_run1.txt"),
+        ("sinkhole", "mtd",   project_dir / "mtd_attack_sinkhole_z1_run1.txt"),
+        ("flood",    "mtd",   project_dir / "mtd_attack_flood_z1_run1.txt"),
+        ("scan",     "nomtd", project_dir / "nomtd_scan_z1_run1.txt"),
+        ("sinkhole", "nomtd", project_dir / "nomtd_sinkhole_z1_run1.txt"),
+        ("flood",    "nomtd", project_dir / "nomtd_flood_z1_run1.txt"),
     ]
 
     results: List[RunResult] = []
@@ -600,9 +600,9 @@ def main() -> int:
         results.append(parse_log(path, scenario, condition))
 
     print_table(results)
-    write_json(results, project_dir / "eval" / "results.json")
+    write_json(results, project_dir / "eval" / "results_z1.json")
     print()
-    print(f"wrote eval/results.json")
+    print(f"wrote eval/results_z1.json")
     return 0
 
 
