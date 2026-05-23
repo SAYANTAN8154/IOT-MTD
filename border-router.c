@@ -206,6 +206,26 @@ udp_rx_callback(struct simple_udp_connection *c,
     if(!mtd_flood_active()) {
       mtd_report_anomaly();
     }
+    /*
+     * Fix A -- piggyback recovery for lagging legit sensors.
+     *
+     * Without this, a sensor that has fallen behind on the port token
+     * (e.g. missed two consecutive CMD_PORT_HOP broadcasts) is stuck:
+     * every packet it sends is flagged as stale and the original
+     * piggyback path (further below) is skipped because of the early
+     * return.  The only recovery channel was the next broadcast
+     * CMD_PORT_HOP, which is UDP and unreliable.
+     *
+     * By sending the current token back to the sender HERE (before the
+     * return), the lagging sensor learns the new token immediately and
+     * its next packet will pass the port_ok check.  The current packet
+     * is still dropped -- this only fixes the recovery loop, not the
+     * one-time loss.  Attacker-sourced traffic is excluded so we do not
+     * give a probing attacker a free oracle for the current token.
+     */
+    if(!from_attacker) {
+      mtd_send_port_update(sender_addr);
+    }
 #else
     mtd_report_anomaly();
 #endif
