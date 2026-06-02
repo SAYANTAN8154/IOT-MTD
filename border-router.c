@@ -173,12 +173,18 @@ udp_rx_callback(struct simple_udp_connection *c,
    *   Accept: current_port (fully up-to-date sensor)
    *           previous_port (missed exactly one hop -- sliding window tolerance)
    *           SENSOR_UDP_CLIENT_PORT (8765) ONLY while initial grace is active
-   *             (first two hop cycles, ~120 s) -- thereafter 8765 is anomalous.
+   *             (until the second port hop) -- thereafter 8765 is anomalous.
    *
    * The initial grace covers the boot-up period before sensors have received
-   * their first port update.  After the second hop every actively transmitting
-   * sensor has received ≥12 piggyback replies and is expected to be current.
-   * An attacker replaying 8765 (or any port ≥2 hops old) is then detected.
+   * their first port update.  It is released after the second port hop
+   * (mtd_hop_count >= 2).  Under proactive-only scheduling that is at
+   * ~2 x MTD_PORT_HOP_INTERVAL_S = 600 s; reactive cycles (e.g. a CONN_FAILURE
+   * raised by the silence watchdog) advance the port hops and can expire the
+   * grace earlier.  By the second hop every actively transmitting sensor has
+   * received many port-update replies (2 x MTD_PORT_HOP_INTERVAL_S /
+   * SENSOR_SEND_INTERVAL_S = 60 send cycles under proactive scheduling) and is
+   * expected to be current, so an attacker replaying 8765 (or any port >= 2
+   * hops old) is then detected.
    */
   uint8_t port_ok =
     (payload_port == 0) ||

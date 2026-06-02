@@ -102,9 +102,10 @@ uint16_t mtd_get_previous_port(void);
 /**
  * Returns non-zero while the initial boot-port (SENSOR_UDP_CLIENT_PORT)
  * grace is still active -- i.e. before the second port hop has fired.
- * After the second hop all sensors have had >=120 s of piggyback replies
- * and are expected to be running a current MTD port; port 8765 then
- * becomes anomalous just like any other stale value.
+ * After the second hop (~600 s under proactive scheduling, earlier if reactive
+ * port hops fire) all sensors have had ample piggyback replies and are expected
+ * to be running a current MTD port; port 8765 then becomes anomalous just like
+ * any other stale value.
  */
 uint8_t mtd_initial_grace_active(void);
 

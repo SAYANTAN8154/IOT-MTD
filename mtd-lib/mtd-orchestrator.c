@@ -184,11 +184,14 @@ static uint16_t previous_port = SENSOR_UDP_CLIENT_PORT;
  * also accepts SENSOR_UDP_CLIENT_PORT (8765) as a valid port so that sensors
  * that have not yet received their first CMD_PORT_HOP are not falsely flagged.
  *
- * The grace expires after the SECOND port hop (mtd_hop_count >= 2).  By that
- * point every actively transmitting sensor has received at least
- * 2 × MTD_PORT_HOP_INTERVAL_S / SENSOR_SEND_INTERVAL_S = 12 piggyback
- * port-update replies and is expected to be running a current MTD port.
- * After expiry, port 8765 is treated as an anomalous stale credential.
+ * The grace expires after the SECOND port hop (mtd_hop_count >= 2).  Under
+ * proactive-only scheduling that is at ~2 × MTD_PORT_HOP_INTERVAL_S = 600 s;
+ * reactive port hops (driven by the threat threshold) can advance it.  By that
+ * point every actively transmitting sensor has had at least
+ * 2 × MTD_PORT_HOP_INTERVAL_S / SENSOR_SEND_INTERVAL_S = 60 send cycles to
+ * receive a piggyback port-update reply and is expected to be running a
+ * current MTD port.  After expiry, port 8765 is treated as an anomalous stale
+ * credential.
  */
 static uint8_t  initial_grace_active = 1;
 static uint8_t  mtd_hop_count            = 0;
@@ -401,7 +404,8 @@ port_hop_cb(void *ptr)
   current_port  = new_port;
 
   /* Expire the 8765 initial-boot grace after the second hop.
-   * Every active sensor has had >=120 s of piggyback replies by now. */
+   * Under proactive scheduling that is ~600 s (2 x MTD_PORT_HOP_INTERVAL_S);
+   * every active sensor has had ample piggyback replies by now. */
   if(initial_grace_active && mtd_hop_count >= 2) {
     initial_grace_active = 0;
     LOG_INFO("Initial port grace EXPIRED after hop %u -- port 8765 now anomalous\n",
@@ -485,7 +489,7 @@ reactive_shuffle_cb(void *ptr)
    * Only the timer consumed by this reactive action is rewound.  The other
    * timer is left alone so its existing countdown continues -- otherwise a
    * persistent attacker (anomaly threshold re-hit every ~25 s) would reset
-   * both timers every cycle and the 60 s port hop would never fire.
+   * both timers every cycle and the 300 s proactive port hop would never fire.
    */
   switch(threat) {
 

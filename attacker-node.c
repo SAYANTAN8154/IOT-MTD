@@ -84,15 +84,27 @@
  * link-local ff02::1 which is never routed.
  */
 #if ATTACK_MODE == ATTACK_MODE_SCAN
-  /* 10 pkt/s injected; ~5-7 pkt/s effective at BR after multi-hop.
-   * Stays well above the STALE_PORT threshold of 5 per evaluation
-   * window without saturating the flood detector.
+  /* OPTION A cadence (2026-06-02): 5 pkt/s injected.
+   *
+   * With Option A the probes are delivered directly to the BR (not to a
+   * swept guess IID), so on the lossless UDGM channel ~87% reach the BR
+   * socket.  At the previous 100 ms (10 pkt/s) cadence that put ~8.8 pkt/s
+   * of attacker traffic plus ~2 pkt/s legit at the BR -- about 108 packets
+   * per 10 s window, which trips the flood/CPU_LOAD detector (threshold 80
+   * per 10 s).  Because the selector priority is CONN_FAILURE > CPU_LOAD >
+   * STALE_PORT, CPU_LOAD then wins every reactive cycle and the scan gets
+   * misclassified as a flood (0 STALE_PORT cycles, rate limiter armed).
+   *
+   * 200 ms (5 pkt/s injected -> ~4.3 delivered + ~2 legit ~= 63 per 10 s)
+   * stays clearly below the flood threshold, so STALE_PORT dominates and
+   * the intended scan -> IPv6 shuffle branch is exercised, while still
+   * crossing the STALE_PORT threshold of 5 quickly.
    *
    * ATTACK_SEND_MS is #ifndef-guarded so the scan-slow / scan-fast
    * wrapper files (attacker-scan-slow.c, attacker-scan-fast.c) can
    * override the cadence for the attacker-speed sweep. */
   #ifndef ATTACK_SEND_MS
-    #define ATTACK_SEND_MS       100
+    #define ATTACK_SEND_MS       200
   #endif
   #define ATTACK_LABEL           "SCAN"
 #elif ATTACK_MODE == ATTACK_MODE_SINKHOLE
@@ -469,6 +481,23 @@ PROCESS_THREAD(attacker_process, ev, data)
      * RFC 7707 IPv6 host-enumeration sweep delivered as binary CoAP
      * GET /.well-known/core?port=8765.  The Uri-Query option carries
      * the stale port marker that drives the BR's STALE_PORT counter.
+     *
+     * --- OPTION A CHANGE (2026-06-02) -----------------------------------
+     * Probes are now DELIVERED to the border router's real address
+     * (br_addr from get_root_ipaddr()) instead of to the swept candidate
+     * IID.  A packet addressed to a guessed IID (fd00::1, fd00::ff, ...)
+     * is not one of the BR's own addresses, so the BR's IPv6 layer drops
+     * it before it reaches the UDP receive callback -- it never registers
+     * in the per-source counters (ar/aa were 0 in every scan run).
+     * Delivering to br_addr makes the probe actually ingest at the BR:
+     *   - under MTD the rotated port makes the stale 8765 token anomalous
+     *     (attacker_anomalous / aa increments, STALE_PORT detection fires);
+     *   - under no-MTD the port never rotates, so 8765 matches and the
+     *     probe is accepted (attacker_rx / ar increments, aa stays 0).
+     * The swept candidate (probe_addr) is still computed and logged to
+     * document the host-enumeration intent.  To revert, change the
+     * simple_udp_sendto() destination back to &probe_addr.
+     * --------------------------------------------------------------------
      */
     if(have_root) {
       uip_ipaddr_t probe_addr;
@@ -481,13 +510,15 @@ PROCESS_THREAD(attacker_process, ev, data)
       int len = build_coap_get(buf, sizeof(buf),
                                ".well-known", "core", query);
       if(len > 0) {
-        simple_udp_sendto(&attack_conn, buf, (uint16_t)len, &probe_addr);
+        simple_udp_sendto(&attack_conn, buf, (uint16_t)len, &br_addr); /* OPTION A: deliver to BR */
         seq_num++;
         pkts_sent++;
         if((pkts_sent % 50) == 0) {
-          LOG_INFO("SCAN_TX total=%lu coap_len=%d target=",
+          LOG_INFO("SCAN_TX total=%lu coap_len=%d swept_target=",
                    (unsigned long)pkts_sent, len);
           LOG_INFO_6ADDR(&probe_addr);
+          LOG_INFO_(" delivered_to=");
+          LOG_INFO_6ADDR(&br_addr);
           LOG_INFO_("\n");
         }
       }
