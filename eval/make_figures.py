@@ -75,6 +75,12 @@ SCENARIOS  = ["scan", "sinkhole", "flood"]
 SCENARIO_TITLES = {"scan": "Scan", "sinkhole": "Sinkhole", "flood": "Flood"}
 
 
+def seeds_for(scn):
+    # Scan run3 had an attacker-routing failure (attacker delivery froze ~10 min
+    # into the run), so it is excluded; all other scenario runs use 5 seeds.
+    return [1, 2, 4, 5] if scn == "scan" else [1, 2, 3, 4, 5]
+
+
 # --- Log helpers --------------------------------------------------------
 TS_RE = re.compile(r"^(\d+):(\d+)\.(\d+)\s+ID:(\d+)\s+(.*)$")
 
@@ -280,7 +286,7 @@ def fig_energy_breakdown(data: Dict, out_dir: Path):
             sensor_per_state_seeds = [[] for _ in states]
             br_per_state_seeds     = [[] for _ in states]
             prefix = "mtd_attack_" if cond == "mtd" else "nomtd_"
-            for seed in SEEDS:
+            for seed in seeds_for(scn):
                 pp = project_dir / f"{prefix}{scn}_sky_run{seed}.txt"
                 if not pp.exists(): continue
                 d = load_log(pp)
@@ -444,7 +450,7 @@ def fig_branch_distribution(data: Dict, out_dir: Path):
     for scn in SCENARIOS:
         per_seed = [[], [], []]   # one list per branch (d0, d1, d2)
         per_seed_total = []
-        for seed in (1, 2, 3, 4, 5):
+        for seed in seeds_for(scn):
             p = project_dir / f"mtd_attack_{scn}_sky_run{seed}.txt"
             if not p.exists():
                 continue
@@ -529,7 +535,7 @@ def fig_attacker_view(data: Dict, out_dir: Path):
     # 30-run aggregation. mut_int stdev is propagated from the mutation-count
     # stdev as 1800/M^2 * sigma_M.
     PUBLISHED = {
-        "scan":     {"useful": (331.2, 211.6), "mut_int": (53.3, 3.6)},
+        "scan":     {"useful": (621.9,  22.2), "mut_int": (59.5, 1.3)},
         "sinkhole": {"useful": (568.6,  38.1), "mut_int": (59.6, 1.6)},
         "flood":    {"useful": (  5.0,   0.2), "mut_int": (46.4, 1.9)},
     }
@@ -550,7 +556,7 @@ def fig_attacker_view(data: Dict, out_dir: Path):
                   fontsize=10, fontweight="bold")
     ax_l.set_xticks(x); ax_l.set_xticklabels(labels)
     ax_l.set_ylabel("Seconds")
-    ax_l.set_title("MTTSF proxy\n(time before first reactive MTD cycle, n=5)")
+    ax_l.set_title("Time to First Reactive Defense (TFRD)\n(time before first reactive MTD cycle, n=5)")
     ax_l.set_ylim(0, max(m + s for m, s in zip(useful_m, useful_s)) + 120)
     ax_l.grid(True, axis="y", alpha=0.25, linestyle="--")
 
@@ -652,9 +658,9 @@ def fig_speed_sweep(_data: Dict, out_dir: Path):
     """
     project_dir = Path(__file__).resolve().parent.parent
     rates = [
-        ("2 pkt/s\n(slow)",      "mtd_attack_scan_slow_sky.txt"),
-        ("10 pkt/s\n(baseline)", "mtd_attack_scan_sky_run1.txt"),
-        ("50 pkt/s\n(fast)",     "mtd_attack_scan_fast_sky.txt"),
+        ("2 pkt/s\n(slow)",          "mtd_attack_scan_slow_sky.txt"),
+        ("5 pkt/s\n(baseline)",      "mtd_attack_scan_sky_run1.txt"),
+        ("50 pkt/s\n(fast)",         "mtd_attack_scan_fast_sky.txt"),
     ]
     counts = []
     for _, fn in rates:
@@ -695,7 +701,7 @@ def fig_speed_sweep(_data: Dict, out_dir: Path):
     ax.set_xticks(x); ax.set_xticklabels([r[0] for r in rates])
     ax.set_ylabel("Reactive cycles in 30 min")
     ax.set_ylim(0, max(max(c) for c in counts) + 7)
-    ax.set_title("Scan attacker-rate sweep: branch composition at 2 / 10 / 50 pkt/s")
+    ax.set_title("Scan attacker-rate sweep: branch composition at 2 / 5 / 50 pkt/s")
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.12), ncol=3,
               fontsize=9, frameon=False)
     ax.grid(True, axis="y", alpha=0.25, linestyle="--")
