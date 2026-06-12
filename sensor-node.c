@@ -106,11 +106,11 @@ udp_rx_callback(struct simple_udp_connection *c,
   } else if(cmd == CMD_ADDR_SHUFFLE) {
     /*
      * Orchestrator is requesting an IPv6 IID shuffle on this node.
-     * ipv6_shuffle_address() randomises u16[4..7] of the link-local
+     * ipv6_shuffle_address() randomises u16[4..7] of the
      * address while keeping the /64 prefix intact, then removes the
      * old address and installs the new one via uip_ds6_addr_add().
      */
-    LOG_INFO("CMD_ADDR_SHUFFLE: randomising local IPv6 IID\n");
+    LOG_INFO("CMD_ADDR_SHUFFLE: randomising IPv6 IID\n");
     ipv6_shuffle_address();
 
   } else {
