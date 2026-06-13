@@ -11,7 +11,7 @@
  * during defence reads as a genuine protocol attack, not as ASCII
  * test traffic.
  *
- *   ATTACK_MODE_SCAN     (1)  -- thesis Sec 5.3.1
+ *  
  *     IPv6 host enumeration following RFC 7707 patterns.  Each probe
  *     is a binary CoAP GET (RFC 7252) addressed to /.well-known/core
  *     with a Uri-Query option carrying a stale port marker.  The
@@ -23,7 +23,7 @@
  *     contains "port=8765" -> STALE_PORT counter increments.
  *     Expected MTD response: IPv6 IID shuffle.
  *
- *   ATTACK_MODE_SINKHOLE (2)  -- thesis Sec 5.3.2
+ *   ATTACK_MODE_SINKHOLE (2) 
  *     Forged RPL DIO advertising rank=0x0100 (rank 1, lower than the
  *     legitimate root rank 0x0080=128 plus min-hop-rank-increment 256
  *     for a one-hop child = 384, so 256 wins routing if accepted).
@@ -39,7 +39,7 @@
  *     trigger CONN_FAILURE in the BR's silence watchdog.
  *     Expected MTD response: port hop + RPL re-convergence.
  *
- *   ATTACK_MODE_FLOOD    (3)  -- thesis Sec 5.3.3
+ *   ATTACK_MODE_FLOOD    (3)  
  *     CoAP CON GET storm following RFC 7252.  Each packet is a binary
  *     CoAP message (header+token+Uri-Path "sensor"/"data") with a
  *     randomised Message ID and Token to defeat naive duplicate
@@ -48,7 +48,7 @@
  *     stale-port path.
  *     Expected MTD response: composite shuffle + rate limiting.
  *
- * Thesis reference: Attack Design -- Chapter 5 (Attack Scenarios).
+ * 
  */
 
 #include "contiki.h"
@@ -74,8 +74,8 @@
 /*---------------------------------------------------------------------------*/
 /*
  * Cadences are tuned for a peripheral attacker placed beyond the BR's
- * 50 m TX range but within the 100 m interference range (thesis Sec
- * 5.2.x).  In this topology unicast probes reach the BR only via
+ * 50 m TX range but within the 100 m interference range .
+  In this topology unicast probes reach the BR only via
  * multi-hop through a legitimate sensor parent, so per-hop UDGM loss
  * (~30-50% per pair under load) reduces the effective rate at the BR
  * relative to the injection rate.  SCAN and FLOOD cadences are doubled
